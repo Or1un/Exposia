@@ -6,7 +6,7 @@ It collects passive public data, applies a documented methodology, and produces 
 
 Exposia is meant for security awareness and decision support. It is neither a penetration-testing tool nor an exhaustive audit.
 
-> **Responsible use.** Assess only domains you own or are explicitly authorized to assess. Passive reconnaissance still queries third-party services, and DNS resolution can indirectly reach the domain's authoritative name servers. Reports describe a real organization's exposure: treat them as confidential. See [SECURITY.md](SECURITY.md).
+> **Responsible use.** Assess only domains you own or are explicitly authorized to assess. Passive reconnaissance still queries third-party services, and DNS resolution can indirectly reach the domain's authoritative name servers. Reports describe a real organization's exposure: treat them as confidential.
 
 ## What you get
 
@@ -83,7 +83,7 @@ Each finding is labeled according to its epistemic status: observed (source-repo
 
 ## Data sources
 
-Exposia queries these services at run time, with your own keys. No third-party data is redistributed with the repository. You remain responsible for complying with each service's terms. The requests sent and the data shared with each service are listed in [METHODOLOGY.md §7](METHODOLOGY.md).
+Exposia queries these services at run time, with your own keys. No third-party data is redistributed with the repository. You remain responsible for complying with each service's terms. The requests sent and the data shared with each service are listed in [METHODOLOGY.md](METHODOLOGY.md).
 
 - [crt.sh](https://crt.sh) and [Cert Spotter](https://sslmate.com/certspotter): certificate transparency
 - [Shodan](https://www.shodan.io): exposed services (data © Shodan). Shodan reports what it has already collected; Exposia does not scan ports.
