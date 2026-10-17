@@ -106,7 +106,3 @@ Exposia queries these services at run time, with your own keys. No third-party d
 ## Contributing
 
 Issues and pull requests are welcome, especially new services or attack paths in `Parameters/`.
-
-## Status
-
-Exposia is an early-stage project. Its methodology is documented so that its assumptions can be inspected, tested and calibrated.
