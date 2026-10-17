@@ -1,2 +1,112 @@
 # Exposia
-Passive external attack surface assessment from a domain name. Maps exposed assets, qualifies potential vulnerabilities, models illustrative attack scenarios, and prioritizes mitigations through a documented, deterministic, rule-based methodology - no AI-generated analysis.
+
+**Exposia turns a domain name into a structured view of external cyber exposure, illustrative attack scenarios, and prioritized remediation actions — deterministic, rule-based, with no AI-generated analysis.**
+
+It collects passive public data, applies a documented methodology, and produces a PDF report for decision-makers plus a CSV export for analysts. The methodology is explicit and documented: key business parameters are configurable, while scoring formulas, assumptions and limitations are open to inspection.
+
+Exposia is meant for security awareness and decision support. It is neither a penetration-testing tool nor an exhaustive audit.
+
+> **Responsible use.** Assess only domains you own or are explicitly authorized to assess. Passive reconnaissance still queries third-party services, and DNS resolution can indirectly reach the domain's authoritative name servers. Reports describe a real organization's exposure: treat them as confidential. See [SECURITY.md](SECURITY.md).
+
+## What you get
+
+For each domain, a `Result/<name>/` folder (`<name>` is the registered domain without its suffix, e.g. `example` for `example.com`) with:
+
+- `Rapport_Final_*.pdf`: cover, summary, threat profiles, assets, risks, mitigation plan;
+- `Exposia_*_presentation.csv`: one row per exposure × CVE, ready for a spreadsheet;
+- `data/`: intermediate CSV and PDF files, kept for inspection.
+
+The report and CSV are generated **in French**. The pipeline is [documented in French](METHODOLOGY.md); the code and this README are in English or bilingual.
+
+## Key features
+
+- **Passive discovery**: subdomains from Certificate Transparency, DNS resolution, services and banners reported by Shodan.
+- **Vulnerability qualification**: potential CVEs for reported versions, prioritized by EPSS, CVSS, age and service criticality.
+- **Rule-based attack scenarios**: illustrative narratives derived from CVSS vectors and exposed services.
+- **Threat modeling**: threat profiles from configurable matrices (sector, size, region), inspired by EBIOS RM.
+- **Mitigation guidance**: security practices ranked by risk, efficacy and feasibility.
+- **Configurable**: ports, services, attack mappings, measures and matrices are CSV files in `Parameters/`.
+
+## Installation
+
+Python 3.10 or later.
+
+```bash
+git clone <repository-url> exposia && cd exposia
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+WeasyPrint needs system libraries (Pango). See its [installation guide](https://doc.courtbouillon.org/weasyprint/stable/first_steps.html).
+
+### API keys (optional)
+
+```bash
+cp config.example.yaml config.yaml && chmod 600 config.yaml
+```
+
+Set `api_keys.shodan` and `api_keys.nvd`, or use the `SHODAN_API_KEY` and `NVD_API_KEY` environment variables (they take precedence).
+
+- Without a Shodan key, the vulnerability scan is skipped (asset discovery only).
+- Without an NVD key, analysis takes about 6 s per CVE instead of 0.7 s. [Free key](https://nvd.nist.gov/developers/request-an-api-key).
+
+`config.yaml` is excluded from the repository by `.gitignore`. Keys are never passed on the command line.
+
+## Usage
+
+```bash
+./run_pipeline.sh -d example.com
+```
+
+| Option | Effect |
+|---|---|
+| `--skip-threat` | Skip threat modeling (the only interactive step) |
+| `--skip-discovery --skip-mitigation` | Regenerate the report from existing data |
+| `--resolve-ips` | Resolve IPs without a vulnerability scan |
+| `--clean` | Remove intermediate PDFs |
+| `--continue-on-error` | Keep going if a stage fails |
+
+`./run_pipeline.sh --help` lists every option.
+
+## How it works
+
+1. **D1**: discover subdomains and IPs, then services and CVEs; compute exposure and domain-level scores.
+2. **D2**: associate each finding with mitigation measures and rank them.
+3. **D3**: model relevant threat profiles from contextual inputs and matrices.
+4. **R modules**: generate and assemble the PDF report and the CSV export.
+
+Modules exchange CSV and JSON files, so each stage can be inspected and rerun on its own. **Only D1 accesses external services**; the later stages work on the collected data, and a test enforces this.
+
+Scoring combines EPSS, CVSS, vulnerability age and service criticality. **It is not an official CVSS score.** The weights and thresholds are design choices, not industry standards or statistically validated measures.
+
+Each finding is labeled according to its epistemic status: observed (source-reported data), inferred (such as a potential CVE match based on a reported version), estimated (heuristic scores or classifications), modeled (scenarios and threat profiles), or recommended (mitigation measures). A potential vulnerability is not a confirmed one, and a modeled scenario is not an incident. Details, algorithms and per-module notes are in [METHODOLOGY.md](METHODOLOGY.md) (in French).
+
+## Data sources
+
+Exposia queries these services at run time, with your own keys. No third-party data is redistributed with the repository. You remain responsible for complying with each service's terms. The requests sent and the data shared with each service are listed in [METHODOLOGY.md §7](METHODOLOGY.md).
+
+- [crt.sh](https://crt.sh) and [Cert Spotter](https://sslmate.com/certspotter): certificate transparency
+- [Shodan](https://www.shodan.io): exposed services (data © Shodan). Shodan reports what it has already collected; Exposia does not scan ports.
+- [NVD](https://nvd.nist.gov): CVSS scores. *This product uses the NVD API but is not endorsed or certified by the NVD.*
+- [EPSS](https://www.first.org/epss) (FIRST): exploitation probability
+- [CVE](https://www.cve.org): CVE® is a registered trademark of The MITRE Corporation
+- [CVSS](https://www.first.org/cvss): property of FIRST.Org, Inc., used with permission. Exposia's score is not an official CVSS score.
+- [ExploitDB](https://gitlab.com/exploit-database/exploitdb) and [PoC-in-GitHub](https://github.com/nomi-sec/PoC-in-GitHub): public exploit references and proof-of-concept links. Exposia downloads ExploitDB's public index to match CVEs; it does not download exploit code or proof-of-concept payloads.
+- Threat taxonomy inspired by [EBIOS RM](https://cyber.gouv.fr) (ANSSI), with no affiliation or endorsement.
+
+## Limitations
+
+- **Potential false positives**: CVEs are inferred from reported versions; backported fixes can make them wrong.
+- **Incomplete visibility**: passive sources can be incomplete, outdated, or distorted by CDNs.
+- **Heuristics**: internal/external classification and threat profiles rest on configurable rules and expert judgment.
+- **Unvalidated scoring**: weights and thresholds are open to empirical calibration.
+- **No KEV signal yet**: the CISA Known Exploited Vulnerabilities catalog is not part of the qualification.
+- **No substitute for a professional assessment**: Exposia cannot show that a system is secure.
+
+## Contributing
+
+Issues and pull requests are welcome, especially new services or attack paths in `Parameters/`.
+
+## Status
+
+Exposia is an early-stage project. Its methodology is documented so that its assumptions can be inspected, tested and calibrated.
