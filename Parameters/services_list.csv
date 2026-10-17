@@ -1,0 +1,242 @@
+Port;Service;Criticité;Catégorie
+1;TCPmux;FAIBLE;Services système
+7;echo;FAIBLE;Services système
+9;discard;FAIBLE;Services système
+11;systat;FAIBLE;Monitoring système
+13;daytime;FAIBLE;Services système
+15;netstat;FAIBLE;Monitoring système
+17;qotd;FAIBLE;Services système
+19;chargen;FAIBLE;Services système
+20;ftp-data;HAUTE;Transfert de fichiers
+21;ftp;HAUTE;Transfert de fichiers
+22;ssh;CRITIQUE;Accès d'administration
+23;telnet;CRITIQUE;Accès d'administration
+25;smtp;HAUTE;Messagerie
+37;time;FAIBLE;Services système
+43;whois;FAIBLE;Services de données
+49;tacacs;HAUTE;Authentification
+53;domain;HAUTE;Infrastructure réseau
+67;bootps;MOYENNE;Infrastructure réseau
+68;bootpc;MOYENNE;Infrastructure réseau
+69;tftp;MOYENNE;Transfert de fichiers
+70;gopher;FAIBLE;Application web
+79;finger;FAIBLE;Services de données
+80;http;HAUTE;Application web
+88;kerberos;CRITIQUE;Authentification
+102;iso-tsap;FAIBLE;Services spécialisés
+104;acr-nema;MOYENNE;Services métier
+110;pop3;HAUTE;Messagerie
+111;sunrpc;MOYENNE;Services de données
+113;auth;MOYENNE;Authentification
+119;nntp;MOYENNE;Communication
+123;ntp;MOYENNE;Services système
+135;epmap;MOYENNE;Services de données
+137;netbios-ns;MOYENNE;Partage de fichiers
+138;netbios-dgm;MOYENNE;Partage de fichiers
+139;netbios-ssn;HAUTE;Partage de fichiers
+143;imap2;HAUTE;Messagerie
+161;snmp;MOYENNE;Monitoring système
+162;snmp-trap;MOYENNE;Monitoring système
+163;cmip-man;MOYENNE;Monitoring système
+164;cmip-agent;MOYENNE;Monitoring système
+174;mailq;HAUTE;Messagerie
+177;xdmcp;HAUTE;Accès d'administration
+179;bgp;CRITIQUE;Infrastructure réseau
+199;smux;MOYENNE;Monitoring système
+209;qmtp;HAUTE;Messagerie
+210;z3950;FAIBLE;Services spécialisés
+213;ipx;FAIBLE;Infrastructure réseau
+319;ptp-event;FAIBLE;Services système
+320;ptp-general;FAIBLE;Services système
+345;pawserv;FAIBLE;Services spécialisés
+346;zserv;FAIBLE;Services spécialisés
+369;rpc2portmap;MOYENNE;Services de données
+370;codaauth2;CRITIQUE;Authentification
+371;clearcase;MOYENNE;Gestion de code source
+389;ldap;CRITIQUE;Authentification
+427;svrloc;MOYENNE;Services de données
+443;https;HAUTE;Application web
+444;snpp;HAUTE;Messagerie
+445;microsoft-ds;CRITIQUE;Partage de fichiers
+464;kpasswd;HAUTE;Authentification
+465;submissions;HAUTE;Messagerie
+487;saft;FAIBLE;Services spécialisés
+500;isakmp;HAUTE;VPN
+554;rtsp;MOYENNE;Services multimédia
+607;nqs;FAIBLE;Services spécialisés
+623;asf-rmcp;MOYENNE;Monitoring système
+628;qmqp;HAUTE;Messagerie
+631;ipp;MOYENNE;Services d'impression
+646;ldp;MOYENNE;Infrastructure réseau
+512;exec;CRITIQUE;Accès d'administration
+513;login;CRITIQUE;Accès d'administration
+514;shell;CRITIQUE;Accès d'administration
+515;printer;MOYENNE;Services d'impression
+517;talk;FAIBLE;Communication
+518;ntalk;FAIBLE;Communication
+520;route;HAUTE;Infrastructure réseau
+538;gdomap;MOYENNE;Services de données
+540;uucp;FAIBLE;Transfert de fichiers
+543;klogin;CRITIQUE;Accès d'administration
+544;kshell;CRITIQUE;Accès d'administration
+546;dhcpv6-client;MOYENNE;Infrastructure réseau
+547;dhcpv6-server;MOYENNE;Infrastructure réseau
+548;afpoverTCP;MOYENNE;Partage de fichiers
+563;nntps;MOYENNE;Communication
+587;submission;HAUTE;Messagerie
+636;ldaps;CRITIQUE;Authentification
+655;tinc;HAUTE;VPN
+706;silc;MOYENNE;Communication
+749;kerberos-adm;CRITIQUE;Authentification
+853;domain-s;HAUTE;Infrastructure réseau
+873;rsync;MOYENNE;Transfert de fichiers
+989;ftps-data;HAUTE;Transfert de fichiers
+990;ftps;HAUTE;Transfert de fichiers
+992;telnets;CRITIQUE;Accès d'administration
+993;imaps;HAUTE;Messagerie
+995;pop3s;HAUTE;Messagerie
+1080;socks;MOYENNE;Proxy
+1093;proofd;FAIBLE;Services spécialisés
+1094;rootd;FAIBLE;Services spécialisés
+1099;rmiregistry;HAUTE;Développement
+1194;openvpn;HAUTE;VPN
+1352;lotusnote;HAUTE;Messagerie
+1433;ms-sql-s;CRITIQUE;Base de données
+1434;ms-sql-m;CRITIQUE;Base de données
+1524;ingreslock;CRITIQUE;Base de données
+1645;datametrics;MOYENNE;Monitoring système
+1646;sa-msg-port;MOYENNE;Monitoring système
+1649;kermit;MOYENNE;Transfert de fichiers
+1677;groupwise;HAUTE;Messagerie
+1701;l2f;HAUTE;VPN
+1812;radius;HAUTE;Authentification
+1813;radius-acct;HAUTE;Authentification
+2000;cisco-sccp;MOYENNE;Communication
+2049;nfs;HAUTE;Partage de fichiers
+2086;gnunet;FAIBLE;Services P2P
+2101;rtcm-sc104;FAIBLE;Services spécialisés
+2119;gsigatekeeper;FAIBLE;Services spécialisés
+2135;gris;FAIBLE;Services spécialisés
+2376;docker-s;CRITIQUE;Accès d'administration
+2401;cvspserver;MOYENNE;Gestion de code source
+2430;venus;MOYENNE;Stockage distribué
+2431;venus-se;MOYENNE;Stockage distribué
+2432;codasrv;MOYENNE;Stockage distribué
+2433;codasrv-se;MOYENNE;Stockage distribué
+2583;mon;MOYENNE;Monitoring système
+2628;dict;FAIBLE;Services de données
+2792;f5-globalsite;HAUTE;Application web
+2811;gsiftp;MOYENNE;Transfert de fichiers
+2947;gpsd;FAIBLE;Services spécialisés
+3050;gds-db;CRITIQUE;Base de données
+3130;icpv2;HAUTE;Application web
+3205;isns;MOYENNE;Stockage distribué
+3260;iscsi-target;HAUTE;Stockage distribué
+3306;mysql;CRITIQUE;Base de données
+3389;ms-wbt-server;CRITIQUE;Accès d'administration
+3493;nut;MOYENNE;Monitoring système
+3632;distcc;MOYENNE;Développement
+3689;daap;FAIBLE;Services multimédia
+3690;svn;MOYENNE;Gestion de code source
+4031;suucp;FAIBLE;Services spécialisés
+4094;sysrqd;CRITIQUE;Accès d'administration
+4190;sieve;MOYENNE;Messagerie
+4353;f5-iquery;MOYENNE;Monitoring système
+4369;epmd;MOYENNE;Développement
+4373;remctl;CRITIQUE;Accès d'administration
+4460;ntske;FAIBLE;Services système
+4500;ipsec-nat-t;HAUTE;VPN
+4569;iax;MOYENNE;Communication
+4691;mtn;MOYENNE;Gestion de code source
+4899;radmin-port;CRITIQUE;Accès d'administration
+5060;sip;MOYENNE;Communication
+5061;sip-tls;MOYENNE;Communication
+5222;xmpp-client;MOYENNE;Communication
+5269;xmpp-server;MOYENNE;Communication
+5308;cfengine;HAUTE;Accès d'administration
+5353;mdns;MOYENNE;Infrastructure réseau
+5432;postgresql;CRITIQUE;Base de données
+5556;freeciv;FAIBLE;Services spécialisés
+5671;amqps;HAUTE;Messagerie
+5672;amqp;HAUTE;Messagerie
+5900;vnc;CRITIQUE;Accès d'administration
+5985;wsman;CRITIQUE;Accès d'administration
+6000;x11;HAUTE;Interface graphique
+6001;x11-1;HAUTE;Interface graphique
+6002;x11-2;HAUTE;Interface graphique
+6003;x11-3;HAUTE;Interface graphique
+6004;x11-4;HAUTE;Interface graphique
+6005;x11-5;HAUTE;Interface graphique
+6006;x11-6;HAUTE;Interface graphique
+6007;x11-7;HAUTE;Interface graphique
+6346;gnutella-svc;FAIBLE;Services P2P
+6347;gnutella-rtr;FAIBLE;Services P2P
+6379;redis;CRITIQUE;Base de données
+6444;sge-qmaster;FAIBLE;Services spécialisés
+6445;sge-execd;FAIBLE;Services spécialisés
+6446;mysql-proxy;CRITIQUE;Base de données
+6696;babel;MOYENNE;Infrastructure réseau
+6697;ircs-u;MOYENNE;Communication
+7000;afs3-fileserver;MOYENNE;Stockage distribué
+7001;afs3-callback;MOYENNE;Stockage distribué
+7002;afs3-prserver;MOYENNE;Stockage distribué
+7003;afs3-vlserver;MOYENNE;Stockage distribué
+7004;afs3-kaserver;CRITIQUE;Authentification
+7005;afs3-volser;MOYENNE;Stockage distribué
+7007;afs3-bos;MOYENNE;Stockage distribué
+7008;afs3-update;MOYENNE;Stockage distribué
+7009;afs3-rmtsys;MOYENNE;Stockage distribué
+7100;font-service;FAIBLE;Services spécialisés
+8080;http-alt;HAUTE;Application web
+8081;http;HAUTE;Application web
+8140;puppet;CRITIQUE;Accès d'administration
+9101;bacula-dir;MOYENNE;Sauvegarde
+9102;bacula-fd;MOYENNE;Sauvegarde
+9103;bacula-sd;MOYENNE;Sauvegarde
+9200;elasticsearch;CRITIQUE;Base de données
+9667;xmms2;FAIBLE;Services spécialisés
+10050;zabbix-agent;MOYENNE;Monitoring système
+10051;zabbix-trapper;MOYENNE;Monitoring système
+10080;amanda;MOYENNE;Sauvegarde
+10809;nbd;MOYENNE;Stockage distribué
+11112;dicom;MOYENNE;Services métier
+11371;hkp;FAIBLE;Services spécialisés
+17500;db-lsp;CRITIQUE;Base de données
+22125;dcap;MOYENNE;Transfert de fichiers
+22128;gsidcap;MOYENNE;Transfert de fichiers
+22273;wnn6;FAIBLE;Services spécialisés
+27017;mongod;CRITIQUE;Base de données
+2375;docker;CRITIQUE;Accès d'administration
+2379;etcd;CRITIQUE;Base de données
+2380;etcd-peer;HAUTE;Base de données
+5000;docker-registry;HAUTE;Développement
+6443;kubernetes-api;CRITIQUE;Accès d'administration
+10250;kubelet;CRITIQUE;Accès d'administration
+10255;kubelet-readonly;HAUTE;Accès d'administration
+10256;kube-proxy;MOYENNE;Infrastructure réseau
+1521;oracle-tns;CRITIQUE;Base de données
+6380;redis-alt;CRITIQUE;Base de données
+9300;elasticsearch-transport;HAUTE;Base de données
+11211;memcached;HAUTE;Base de données
+27018;mongodb-shard;CRITIQUE;Base de données
+8086;influxdb;HAUTE;Base de données
+50000;db2;HAUTE;Base de données
+15672;rabbitmq-management;HAUTE;Interface graphique
+9092;kafka;HAUTE;Communication
+8161;activemq-console;MOYENNE;Interface graphique
+61616;activemq-openwire;MOYENNE;Communication
+3000;grafana;HAUTE;Interface graphique
+5601;kibana;HAUTE;Interface graphique
+9000;portainer;HAUTE;Accès d'administration
+9090;prometheus;MOYENNE;Monitoring système
+8500;consul;HAUTE;Infrastructure réseau
+5986;wsmans;HAUTE;Accès d'administration
+5901;vnc-1;HAUTE;Accès d'administration
+502;modbus;CRITIQUE;Services spécialisés
+47808;bacnet;HAUTE;Services spécialisés
+20000;dnp3;HAUTE;Services spécialisés
+1883;mqtt;HAUTE;Communication
+8883;mqtts;MOYENNE;Communication
+7547;cwmp;HAUTE;Infrastructure réseau
+37777;dahua-dvr;HAUTE;Services multimédia
+8554;rtsp-alt;MOYENNE;Services multimédia

@@ -1,0 +1,28 @@
+Confidentialité;Intégrité;Disponibilité;Impact Métier (Étape 3);Tags Mappés;Criticité
+H;H;H;Il compromet totalement le système, accède à toutes les données sensibles et peut interrompre les opérations critiques;vol_donnees_sensibles, compromission_serveur, deni_service;CRITIQUE
+H;H;L;Il accède aux données confidentielles et peut modifier les informations métier avec un impact limité sur la continuité;vol_donnees_sensibles, compromission_donnees, modification_donnees;ÉLEVÉ
+H;H;N;Il consulte les données sensibles et peut altérer leur intégrité sans affecter la disponibilité des services;vol_donnees_sensibles, compromission_donnees;ÉLEVÉ
+H;L;H;Il accède aux données confidentielles et peut provoquer des interruptions de service majeures;vol_donnees_sensibles, deni_service;ÉLEVÉ
+H;L;L;Il consulte des données sensibles avec une capacité limitée de modification et d'interruption;vol_donnees_sensibles, acces_non_autorise;MOYEN
+H;L;N;Il accède aux données sensibles avec des modifications mineures sans impact sur les services;vol_donnees_sensibles, acces_non_autorise;MOYEN
+H;N;H;Il consulte des données confidentielles et peut interrompre les services critiques;vol_donnees_sensibles, deni_service;ÉLEVÉ
+H;N;L;Il accède aux données sensibles avec un impact limité sur la disponibilité des services;vol_donnees_sensibles, acces_non_autorise;MOYEN
+H;N;N;Il consulte uniquement des données confidentielles sans autre impact sur l'organisation;vol_donnees_sensibles, acces_non_autorise;MOYEN
+L;H;H;Il modifie des informations limitées mais peut provoquer des interruptions majeures des activités;compromission_donnees, deni_service;ÉLEVÉ
+L;H;L;Il altère l'intégrité de données avec un impact modéré sur la continuité des opérations;compromission_donnees, modification_donnees;MOYEN
+L;H;N;Il modifie des informations limitées sans affecter la disponibilité des services;compromission_donnees, modification_donnees;MOYEN
+L;L;H;Il a un accès limité aux données mais peut causer des interruptions importantes des services;deni_service, acces_non_autorise;MOYEN
+L;L;L;Il a un impact limité sur la confidentialité, l'intégrité et la disponibilité des ressources;acces_non_autorise;FAIBLE
+L;L;N;Il accède de manière limitée aux informations sans impact significatif sur l'organisation;acces_non_autorise;FAIBLE
+L;N;H;Il ne compromet pas les données mais peut interrompre significativement les services métier;deni_service;MOYEN
+L;N;L;Il a un impact minimal sur l'accès aux données et la disponibilité des services;acces_non_autorise;FAIBLE
+L;N;N;Il a un impact négligeable sur les opérations et la sécurité de l'organisation;acces_non_autorise;TRÈS FAIBLE
+N;H;H;Il peut modifier des informations critiques et interrompre les services sans accès aux données confidentielles;compromission_donnees, deni_service;ÉLEVÉ
+N;H;L;Il altère l'intégrité de données importantes avec un impact limité sur la continuité;compromission_donnees, modification_donnees;MOYEN
+N;H;N;Il modifie des informations critiques sans affecter la confidentialité ou la disponibilité;compromission_donnees, modification_donnees;MOYEN
+N;L;H;Il peut provoquer des interruptions majeures des services sans compromettre les données;deni_service;MOYEN
+N;L;L;Il a un impact mineur sur l'intégrité et la disponibilité sans compromettre la confidentialité;modification_donnees;FAIBLE
+N;L;N;Il a un impact minimal uniquement sur l'intégrité des informations;modification_donnees;FAIBLE
+N;N;H;Il peut uniquement interrompre les services sans compromettre les données;deni_service;MOYEN
+N;N;L;Il a un impact minimal sur la disponibilité des services;deni_service;FAIBLE
+N;N;N;Il n'a aucun impact direct sur la sécurité de l'organisation;-;NÉGLIGEABLE

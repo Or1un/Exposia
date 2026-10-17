@@ -1,0 +1,25 @@
+# =============================================================================
+# Exposia — configuration locale (clés API)
+#
+# Copiez ce fichier en config.yaml (à la racine du projet) puis renseignez vos clés :
+#     cp config.example.yaml config.yaml && chmod 600 config.yaml
+#
+# ⚠ config.yaml contient des secrets : ne pas le partager ni le versionner
+#   (il est dans .gitignore). N'écrivez jamais de vraie clé dans ce fichier modèle.
+#
+# Alternative (CI, conteneur) : variables d'environnement SHODAN_API_KEY et
+# NVD_API_KEY. Elles sont prioritaires sur ce fichier.
+#
+# Une clé laissée vide ("") est considérée comme absente.
+# =============================================================================
+
+api_keys:
+  # Shodan — scan de vulnérabilités des IP découvertes (D1).
+  # Vide : le scan de vulnérabilités est ignoré (découverte d'actifs seule).
+  shodan: ""
+
+  # NVD — données CVSS des CVE (version, vecteur, score) utilisées pour les
+  # scénarios d'attaque (D1). Vide : NVD impose ~6 s par CVE (~13 min pour
+  # 127 CVE) ; avec une clé : ~0,7 s par CVE.
+  # Demande gratuite : https://nvd.nist.gov/developers/request-an-api-key
+  nvd: ""

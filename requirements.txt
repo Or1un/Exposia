@@ -1,0 +1,52 @@
+# =============================================================================
+# Exposia — dépendances Python
+#
+# Installation :
+#   pip install -r requirements.txt
+#
+# Sur Kali / Debian 12+ (environnement « externally managed », PEP 668),
+# utiliser un venv (recommandé) :
+#   python3 -m venv .venv && source .venv/bin/activate
+#   pip install -r requirements.txt
+# ou, pour installer sur le Python système :
+#   pip install -r requirements.txt --break-system-packages
+#
+# ⚠ WeasyPrint nécessite AUSSI des bibliothèques système (voir bas de fichier).
+# =============================================================================
+
+# --- Configuration -----------------------------------------------------------
+pyyaml>=6.0            # lecture de config.yaml (clés API Shodan / NVD)
+tldextract>=5.0        # nom de campagne (suffixes publics : .co.uk, .co.ma…) — hors ligne
+
+# --- Production de données (Modules/D_Data) ---------------------------------
+pandas>=2.0            # D1, D2 : manipulation des CSV Exposia
+requests>=2.28         # D1 : appels HTTP (crt.sh, NVD, EPSS, ExploitDB)
+urllib3>=2.0           # D1 : stratégie de retry sur la session HTTP
+shodan>=1.31           # D1 : scan de vulnérabilités (optionnel à l'exécution :
+                       #      sans clé dans config.yaml, l'étape est ignorée)
+tqdm>=4.65             # D1 : barres de progression
+
+# --- Génération du rapport (Modules/R_Report) -------------------------------
+weasyprint>=60         # R1..R6 (+ page de garde) : HTML/CSS -> PDF
+pypdf>=4.0             # R9 : fusion des PDF, liens du sommaire et signets
+reportlab>=4.0         # R9 : numérotation « Page X sur Y »
+
+# =============================================================================
+# Dépendances SYSTÈME (hors pip) — requises par WeasyPrint
+#
+# Debian / Ubuntu / Kali :
+#   sudo apt install libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b \
+#                    libcairo2 libgdk-pixbuf-2.0-0 libffi-dev
+#
+# Fedora :
+#   sudo dnf install pango cairo gdk-pixbuf2 libffi-devel
+#
+# macOS (Homebrew) :
+#   brew install pango cairo gdk-pixbuf libffi
+#
+# Sans ces paquets, l'import de weasyprint échoue avec une erreur du type
+# « cannot load library 'libgobject-2.0-0' ».
+#
+# La police « DejaVu Sans » est utilisée par les rapports :
+#   sudo apt install fonts-dejavu
+# =============================================================================

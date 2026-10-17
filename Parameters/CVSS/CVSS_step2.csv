@@ -1,0 +1,13 @@
+Combinaison;Modificateur Exploitation (Étape 2);Tags Mappés
+AC:L+PR:N+UI:N;Il pourrait exploiter cette vulnérabilité sans authentification, éventuellement de manière automatisée;exploitation_code, vulnerabilite_logiciel, acces_non_authentifie, execution_code_distant
+AC:L+PR:N+UI:R;Il exploite facilement cette vulnérabilité sans authentification en manipulant un utilisateur légitime;exploitation_code, vulnerabilite_logiciel, acces_non_authentifie, ingenierie_sociale
+AC:L+PR:L+UI:N;Il exploite facilement cette vulnérabilité en abusant de privilèges utilisateur de base;exploitation_code, vulnerabilite_logiciel, authentification_faible, escalation_privileges
+AC:L+PR:L+UI:R;Il exploite cette vulnérabilité en manipulant un utilisateur et en abusant de privilèges limités;exploitation_code, authentification_faible, ingenierie_sociale
+AC:L+PR:H+UI:N;Il exploite facilement cette vulnérabilité dès lors qu'il dispose de privilèges administrateur;exploitation_code, gestion_privileges_faible, escalation_privileges
+AC:L+PR:H+UI:R;Il exploite cette vulnérabilité en manipulant un administrateur par ingénierie sociale;exploitation_code, gestion_privileges_faible, ingenierie_sociale
+AC:H+PR:N+UI:N;Il pourrait exploiter cette vulnérabilité sans authentification, à condition de réunir des circonstances favorables (position d'interception sur le réseau, configuration ou fenêtre de temps particulières);exploitation_code, vulnerabilite_logiciel, acces_non_authentifie
+AC:H+PR:N+UI:R;Il pourrait exploiter cette vulnérabilité sans authentification en manipulant un utilisateur, à condition de réunir des circonstances favorables;exploitation_code, vulnerabilite_logiciel, acces_non_authentifie, ingenierie_sociale
+AC:H+PR:L+UI:N;Il pourrait exploiter cette vulnérabilité en abusant de privilèges utilisateur de base, à condition de réunir des circonstances favorables;exploitation_code, authentification_faible, escalation_privileges
+AC:H+PR:L+UI:R;Il pourrait exploiter cette vulnérabilité en manipulant un utilisateur avec des privilèges limités, à condition de réunir des circonstances favorables;exploitation_code, authentification_faible, ingenierie_sociale
+AC:H+PR:H+UI:N;Il pourrait exploiter cette vulnérabilité dès lors qu'il dispose de privilèges administrateur, à condition de réunir des circonstances favorables;exploitation_code, gestion_privileges_faible
+AC:H+PR:H+UI:R;Il pourrait exploiter cette vulnérabilité en compromettant un administrateur, à condition de réunir des circonstances favorables;exploitation_code, gestion_privileges_faible, ingenierie_sociale

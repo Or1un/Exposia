@@ -1,0 +1,5 @@
+Variable CVSS;Valeur;Reconnaissance (Étape 1);Tags Mappés
+AV;N;Un attaquant distant recherche les services exposés et peut identifier cette vulnérabilité depuis Internet;enumeration_service, reconnaissance_infrastructure
+AV;A;Un attaquant positionné sur le réseau local découvre cette vulnérabilité sur les équipements adjacents;enumeration_service, reconnaissance_infrastructure
+AV;L;Un attaquant ayant un accès local au système identifie cette faille d'escalade de privilèges;acces_systeme, escalation_privileges
+AV;P;Un attaquant ayant un accès physique aux équipements analyse cette vulnérabilité matérielle;acces_systeme, reconnaissance_infrastructure

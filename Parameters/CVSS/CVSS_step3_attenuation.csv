@@ -1,0 +1,3 @@
+Variable CVSS;Valeur;Modificateur Impact (Étape 3);Impact Criticité
+S;U;L'impact reste limité au composant vulnérable initial;Criticité base
+S;C;L'impact s'étend à d'autres systèmes et composants de l'infrastructure;+1 niveau de criticité
