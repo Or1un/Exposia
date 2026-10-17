@@ -1,0 +1,52 @@
+# =============================================================================
+# Exposia — .gitignore
+# =============================================================================
+
+# --- Secrets : ne jamais versionner -----------------------------------------
+# (le modèle à copier est config.example.yaml)
+config.yaml
+.env
+.env.*
+*.key
+*.pem
+
+# --- Résultats d'analyse ------------------------------------------------------
+# Contiennent des données sur l'infrastructure analysée (domaines, IP, CVE,
+# rapports PDF) : confidentielles, à ne jamais publier.
+Result/
+Exposia_*.csv
+threat_analysis_*.csv
+mitigation_prioritization_enhanced.csv
+run_summary.json
+/*.pdf
+
+# Fichiers intermédiaires du scanner (D1), s'ils sont laissés à la racine
+crtsh_cache_*.json
+results_subdomains_*.csv
+results_ips_only.csv
+resultats_shodan.csv
+cve_identifies.csv
+cve_details.csv
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Éditeurs / système ------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
