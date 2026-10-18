@@ -1,5 +1,7 @@
 # Exposia
 
+🇫🇷 [Version FR](README.fr.md)
+
 **Exposia turns a domain name into a structured view of external cyber exposure, illustrative attack scenarios, and prioritized remediation actions — deterministic, rule-based, with no AI-generated analysis.**
 
 It collects passive public data, applies a documented methodology, and produces a PDF report for decision-makers plus a CSV export for analysts. The methodology is explicit and documented: key business parameters are configurable, while scoring formulas, assumptions and limitations are open to inspection.
@@ -16,7 +18,7 @@ For each domain, a `Result/<name>/` folder (`<name>` is the registered domain wi
 - `Exposia_*_presentation.csv`: one row per exposure × CVE, ready for a spreadsheet;
 - `data/`: intermediate CSV and PDF files, kept for inspection.
 
-The report and CSV are generated **in French**. The pipeline is [documented in French](METHODOLOGY.md); the code and this README are in English or bilingual.
+The report and CSV are generated **in French**. The pipeline is documented in [METHODOLOGY.md](METHODOLOGY/METHODOLOGY.md), available in English and French.
 
 ## Key features
 
@@ -78,11 +80,11 @@ Modules exchange CSV and JSON files, so each stage can be inspected and rerun on
 
 Scoring combines EPSS, CVSS, vulnerability age and service criticality. **It is not an official CVSS score.** The weights and thresholds are design choices, not industry standards or statistically validated measures.
 
-Each finding is labeled according to its epistemic status: observed (source-reported data), inferred (such as a potential CVE match based on a reported version), estimated (heuristic scores or classifications), modeled (scenarios and threat profiles), or recommended (mitigation measures). A potential vulnerability is not a confirmed one, and a modeled scenario is not an incident. Details, algorithms and per-module notes are in [METHODOLOGY.md](METHODOLOGY.md) (in French).
+Each finding is labeled according to its epistemic status: observed (source-reported data), inferred (such as a potential CVE match based on a reported version), estimated (heuristic scores or classifications), modeled (scenarios and threat profiles), or recommended (mitigation measures). A potential vulnerability is not a confirmed one, and a modeled scenario is not an incident. Details, algorithms and per-module notes are in [METHODOLOGY.md](METHODOLOGY/METHODOLOGY.md).
 
 ## Data sources
 
-Exposia queries these services at run time, with your own keys. No third-party data is redistributed with the repository. You remain responsible for complying with each service's terms. The requests sent and the data shared with each service are listed in [METHODOLOGY.md](METHODOLOGY.md).
+Exposia queries these services at run time, with your own keys. No third-party data is redistributed with the repository. You remain responsible for complying with each service's terms. The requests sent and the data shared with each service are listed in [METHODOLOGY.md](METHODOLOGY/METHODOLOGY.md).
 
 - [crt.sh](https://crt.sh) and [Cert Spotter](https://sslmate.com/certspotter): certificate transparency
 - [Shodan](https://www.shodan.io): exposed services (data © Shodan). Shodan reports what it has already collected; Exposia does not scan ports.
