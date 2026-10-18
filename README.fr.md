@@ -18,7 +18,7 @@ Pour chaque domaine, un dossier `Result/<nom>/` (`<nom>` est le domaine enregist
 - `Exposia_*_presentation.csv` : une ligne par exposition × CVE, prête pour un tableur ;
 - `data/` : fichiers CSV et PDF intermédiaires, conservés pour examen.
 
-Le rapport et le CSV sont générés **en français**. Le pipeline est décrit dans [METHODOLOGY.md](METHODOLOGY/METHODOLOGY.md).
+Le rapport et le CSV sont générés **en français**. Le pipeline est décrit dans [METHODOLOGY.md](METHODOLOGY/METHODOLOGY.fr.md).
 
 ## Fonctionnalités principales
 
@@ -80,11 +80,11 @@ Les modules échangent des fichiers CSV et JSON : chaque étape peut être exami
 
 Le score combine l'EPSS, le CVSS, l'âge de la vulnérabilité et la criticité du service. **Ce n'est pas un score CVSS officiel.** Les pondérations et les seuils sont des choix de conception, ni des standards du secteur ni des mesures validées statistiquement.
 
-Chaque constat est étiqueté selon son statut épistémique : observé (donnée rapportée par une source), déduit (par exemple une CVE potentielle associée à une version annoncée), estimé (scores ou classifications heuristiques), modélisé (scénarios et profils de menace) ou recommandé (mesures de remédiation). Une vulnérabilité potentielle n'est pas une vulnérabilité confirmée, et un scénario modélisé n'est pas un incident. Le détail, les algorithmes et les notes par module sont dans [METHODOLOGY.md](METHODOLOGY/METHODOLOGY.md).
+Chaque constat est étiqueté selon son statut épistémique : observé (donnée rapportée par une source), déduit (par exemple une CVE potentielle associée à une version annoncée), estimé (scores ou classifications heuristiques), modélisé (scénarios et profils de menace) ou recommandé (mesures de remédiation). Une vulnérabilité potentielle n'est pas une vulnérabilité confirmée, et un scénario modélisé n'est pas un incident. Le détail, les algorithmes et les notes par module sont dans [METHODOLOGY.md](METHODOLOGY/METHODOLOGY.fr.md).
 
 ## Sources de données
 
-Exposia interroge ces services à l'exécution, avec vos propres clés. Aucune donnée tierce n'est redistribuée avec le dépôt. Vous restez responsable du respect des conditions de chaque service. Les requêtes émises et les données transmises à chaque service sont listées dans [METHODOLOGY.md](METHODOLOGY/METHODOLOGY.md).
+Exposia interroge ces services à l'exécution, avec vos propres clés. Aucune donnée tierce n'est redistribuée avec le dépôt. Vous restez responsable du respect des conditions de chaque service. Les requêtes émises et les données transmises à chaque service sont listées dans [METHODOLOGY.md](METHODOLOGY/METHODOLOGY.fr.md).
 
 - [crt.sh](https://crt.sh) et [Cert Spotter](https://sslmate.com/certspotter) : transparence des certificats
 - [Shodan](https://www.shodan.io) : services exposés (données © Shodan). Shodan restitue ce qu'il a déjà collecté ; Exposia ne scanne aucun port.
