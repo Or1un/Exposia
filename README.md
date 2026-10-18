@@ -32,8 +32,7 @@ The report and CSV are generated **in French**. The pipeline is [documented in F
 Python 3.10 or later.
 
 ```bash
-git clone <repository-url> exposia && cd exposia
-python3 -m venv .venv && source .venv/bin/activate
+git clone https://github.com/Or1un/Exposia/ && cd Exposia
 pip install -r requirements.txt
 ```
 
