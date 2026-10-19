@@ -42,6 +42,7 @@ Python 3.10 or later.
 ```bash
 git clone https://github.com/Or1un/Exposia/ && cd Exposia
 pip install -r requirements.txt
+chmod +x run_pipeline.sh
 ```
 
 WeasyPrint needs system libraries (Pango). See its [installation guide](https://doc.courtbouillon.org/weasyprint/stable/first_steps.html).
