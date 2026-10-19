@@ -22,7 +22,7 @@ Le rapport et le CSV sont générés **en français**. Le pipeline est décrit d
 
 ### Exemple de rendu
 
-Le dossier Result/Exemple_FR/ contient un exemple de rapport PDF et de fichiers d'export illustrant les résultats produits par Exposia.
+Le dossier [`Result/Exemple_FR/`](Result/Exemple_FR/) contient un exemple de rapport PDF et de fichiers d'export illustrant les résultats produits par Exposia.
 
 Toutes les données de cet exemple sont entièrement fictives. L'organisation, les actifs, les vulnérabilités, les profils de menace et les scénarios présentés ont été inventés uniquement pour illustrer le rendu final. Ils ne correspondent à aucune analyse d'une organisation réelle et ne doivent pas être interprétés comme des résultats de sécurité vérifiés.
 
