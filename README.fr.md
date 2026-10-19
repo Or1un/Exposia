@@ -20,6 +20,12 @@ Pour chaque domaine, un dossier `Result/<nom>/` (`<nom>` est le domaine enregist
 
 Le rapport et le CSV sont générés **en français**. Le pipeline est décrit dans [METHODOLOGY.md](METHODOLOGY/METHODOLOGY.fr.md).
 
+### Exemple de rendu
+
+Le dossier Result/Exemple_FR/ contient un exemple de rapport PDF et de fichiers d'export illustrant les résultats produits par Exposia.
+
+Toutes les données de cet exemple sont entièrement fictives. L'organisation, les actifs, les vulnérabilités, les profils de menace et les scénarios présentés ont été inventés uniquement pour illustrer le rendu final. Ils ne correspondent à aucune analyse d'une organisation réelle et ne doivent pas être interprétés comme des résultats de sécurité vérifiés.
+
 ## Fonctionnalités principales
 
 - **Découverte passive** : sous-domaines issus de la transparence des certificats, résolution DNS, services et bannières signalés par Shodan.
