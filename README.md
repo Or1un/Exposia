@@ -47,7 +47,7 @@ chmod +x run_pipeline.sh
 
 WeasyPrint needs system libraries (Pango). See its [installation guide](https://doc.courtbouillon.org/weasyprint/stable/first_steps.html).
 
-### API keys (optional)
+### API keys
 
 ```bash
 cp config.example.yaml config.yaml && chmod 600 config.yaml
