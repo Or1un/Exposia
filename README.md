@@ -8,6 +8,8 @@ It collects passive public data, applies a documented methodology, and produces 
 
 Exposia is meant for security awareness and decision support. It is neither a penetration-testing tool nor an exhaustive audit.
 
+[Video](docs/video/Exposia_video_EN_16x9.mp4)
+
 > **Responsible use.** Assess only domains you own or are explicitly authorized to assess. Passive reconnaissance still queries third-party services, and DNS resolution can indirectly reach the domain's authoritative name servers. Reports describe a real organization's exposure: treat them as confidential.
 
 ## What you get
