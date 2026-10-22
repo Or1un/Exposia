@@ -8,6 +8,8 @@ Il collecte des données publiques de façon passive, applique une méthodologie
 
 Exposia sert à la sensibilisation à la sécurité et à l'aide à la décision. Ce n'est ni un outil de test d'intrusion ni un audit exhaustif.
 
+▶ [Vidéo de démo (50 s)](https://www.youtube.com/watch?v=GNIJBMF6XgU)
+
 > **Usage responsable.** N'évaluez que des domaines qui vous appartiennent ou pour lesquels vous disposez d'une autorisation explicite. La reconnaissance passive interroge tout de même des services tiers, et la résolution DNS peut atteindre indirectement les serveurs de noms faisant autorité du domaine. Les rapports décrivent l'exposition d'une organisation réelle : traitez-les comme confidentiels.
 
 ## Ce que vous obtenez
