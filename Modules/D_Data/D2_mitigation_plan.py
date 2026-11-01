@@ -11,6 +11,7 @@ _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)
 import exposia_paths  # résolution centralisée des chemins
 import exposia_ui  # UI console centralisée (Colors, ModernUI)
 from exposia_ui import Colors, ModernUI
+import exposia_events  # événements de progression (--events), sans effet sinon
 from collections import defaultdict
 import sys
 import math
@@ -115,6 +116,9 @@ def load_asm_output(filepath=None):
             'Vulnerability (CVE)': 'cve',
             'Number of Exploits': 'exploits_count',
             'Exploits': 'exploit_references',
+            'KEV': 'kev',
+            'KEV Date Added': 'kev_date_added',
+            'KEV Ransomware': 'kev_ransomware',
             'CVE - Year': 'cve_year',
             'CVSS Score': 'cvss_score',
             'EPSS Score': 'epss_score',
@@ -655,6 +659,7 @@ def main():
 
     # Sauvegarde de l'analyse de priorisation
     save_prioritization_to_csv(mitigation_scores, prioritization_file)
+    exposia_events.count('mitigations', len(mitigation_scores))
 
     # Ajout de la métrique D2 au récapitulatif du run (SUMMARY de fin de pipeline).
     try:
