@@ -5,16 +5,26 @@ Modélisation des menaces : évalue les acteurs de la menace sur plusieurs
 motivations, ne retient que les probabilités élevées (Very / Quite relevant) et
 exporte le score final pondéré (secteur × taille × zone × note ASM) dans la
 colonne Score_Acteur, utilisée par R1 pour classer les acteurs et fixer leur niveau.
+
+Profil : --secteur, --taille, --zone (valeurs des matrices ou leur libellé
+anglais, casse et accents indifférents, « _ » à la place des espaces) ; un champ absent est demandé au
+clavier, et refusé sans terminal. Les valeurs acceptées figurent dans --help.
+La note ASM n'est jamais saisie : c'est la criticité calculée par D1 (run_summary.json).
+Codes de sortie : 0 succès, 1 erreur, 2 profil invalide ou note ASM absente.
 """
 
 import csv
 import os
 import json
+import re
+import unicodedata
 import sys as _sys
 _sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import exposia_paths  # résolution centralisée des chemins
 import exposia_ui  # UI console centralisée (Colors, ModernUI)
 from exposia_ui import Colors, ModernUI
+import exposia_events  # événements de progression (--events), sans effet sinon
+import exposia_vocab as vocab  # libellés anglais des valeurs du profil (--secteur Healthcare…)
 from datetime import datetime
 
 def _load_asm_from_d1():
@@ -30,93 +40,138 @@ def _load_asm_from_d1():
     return None
 
 
-def get_user_inputs():
-    """Collecte les 4 inputs utilisateur + options de filtrage"""
+# ---------------------------------------------------------------------------
+# Profil de l'organisation : secteur, taille, zone
+# ---------------------------------------------------------------------------
+# Les valeurs valides sont lues dans les matrices, seule source de vérité :
+# secteurs = lignes de M1, tailles = colonnes de M6, zones = colonnes de M7.
+# Ajouter un secteur dans M1 suffit pour qu'il soit proposé et accepté.
 
-    # 1. Secteur d'activité
-    secteurs = [
-        "Finance", "Santé", "Gouvernement", "Énergie", "Défense",
-        "E-commerce", "Éducation", "Télécoms", "Transport", "Industrie"
-    ]
-    print("1. SECTEUR D'ACTIVITÉ :")
-    for i, secteur in enumerate(secteurs, 1):
-        print(f"   {i}. {secteur}")
+PROFILE_FIELDS = (
+    # (clé, option CLI, libellé du menu)
+    ("secteur", "--secteur", "SECTEUR D'ACTIVITÉ"),
+    ("taille", "--taille", "TAILLE D'ENTREPRISE"),
+    ("zone", "--zone", "ZONE GÉOGRAPHIQUE"),
+)
 
+
+class ProfileError(Exception):
+    """Profil invalide ou incomplet en mode non interactif (code de sortie 2)."""
+
+
+def profile_options():
+    """Valeurs acceptées pour chaque champ du profil, dans l'ordre des matrices."""
+    secteurs = list(_load_matrix("M1_secteur_to_actor.csv"))
+    tailles = list(next(iter(_load_matrix("M6_taille_weighting.csv").values())))
+    zones = list(next(iter(_load_matrix("M7_zone_weighting.csv").values())))
+    return {"secteur": secteurs, "taille": tailles, "zone": zones}
+
+
+def _norm(value):
+    """Comparaison tolérante : sans casse, sans accents, espaces/tirets/_ équivalents."""
+    text = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode()
+    return re.sub(r"[\s_-]+", " ", text).strip().lower()
+
+
+def cli_value(value):
+    """Forme à taper en ligne de commande : espaces remplacées par « _ » (Europe_Ouest)."""
+    return str(value).replace(" ", "_")
+
+
+# Champ du profil -> vocabulaire (exposia_vocab) qui porte son libellé anglais.
+PROFILE_VOCAB = {"secteur": "sector", "taille": "size", "zone": "zone"}
+
+
+def match_option(field, value, options):
+    """
+    Valeur saisie -> valeur exacte de la matrice ; ProfileError si inconnue.
+    Le libellé anglais d'une valeur est accepté aussi (Healthcare = Santé, SME = PME).
+    """
+    index = {}
+    for o in options:
+        code = vocab.code(PROFILE_VOCAB[field], o)
+        index.setdefault(_norm(vocab.label(PROFILE_VOCAB[field], code, 'en', fallback=o)), o)
+    index.update({_norm(o): o for o in options})
+    hit = index.get(_norm(value))
+    if hit is None:
+        option = dict((k, o) for k, o, _ in PROFILE_FIELDS)[field]
+        raise ProfileError(f"{option} {value!r} inconnu. Valeurs acceptées : "
+                           f"{', '.join(cli_value(o) for o in options)}")
+    return hit
+
+
+def _ask(label, options, number):
+    """Menu numéroté pour un champ (mode interactif)."""
+    print(f"\n{number}. {label} :")
+    for i, opt in enumerate(options, 1):
+        print(f"   {i}. {opt}")
     while True:
         try:
-            choix = int(input("\nVotre choix (1-10) : "))
-            if 1 <= choix <= 10:
-                secteur = secteurs[choix-1]
-                break
-            else:
-                print("Veuillez choisir un nombre entre 1 et 10")
+            choix = int(input(f"\nVotre choix (1-{len(options)}) : "))
+            if 1 <= choix <= len(options):
+                return options[choix - 1]
+            print(f"Veuillez choisir un nombre entre 1 et {len(options)}")
         except ValueError:
             print("Veuillez entrer un nombre valide")
 
-    # 2. Taille d'entreprise
-    tailles = ["TPE", "PME", "ETI", "Grande"]
-    print(f"\n2. TAILLE D'ENTREPRISE :")
-    for i, taille in enumerate(tailles, 1):
-        print(f"   {i}. {taille}")
 
-    while True:
-        try:
-            choix = int(input("\nVotre choix (1-4) : "))
-            if 1 <= choix <= 4:
-                taille = tailles[choix-1]
-                break
-            else:
-                print("Veuillez choisir un nombre entre 1 et 4")
-        except ValueError:
-            print("Veuillez entrer un nombre valide")
+def resolve_profile(secteur=None, taille=None, zone=None, interactive=None):
+    """
+    Profil (secteur, taille, zone) à partir des options, en demandant au clavier
+    les seuls champs absents. Sans terminal (pipeline, Lucid, CI), un champ
+    absent est une erreur : on ne reste jamais bloqué sur une saisie.
+    """
+    if interactive is None:
+        interactive = _sys.stdin.isatty()
+    options = profile_options()
+    given = {"secteur": secteur, "taille": taille, "zone": zone}
+    missing = [opt for key, opt, _ in PROFILE_FIELDS if not given[key]]
+    if missing and not interactive:
+        raise ProfileError(f"Profil incomplet, options manquantes : {', '.join(missing)} "
+                           f"(valeurs : --help)")
+    profile = {}
+    for number, (key, _opt, label) in enumerate(PROFILE_FIELDS, 1):
+        if given[key]:
+            profile[key] = match_option(key, given[key], options[key])
+        else:
+            profile[key] = _ask(label, options[key], number)
+    return profile["secteur"], profile["taille"], profile["zone"]
 
-    # 3. Zone géographique
-    zones = [
-        "Europe Ouest", "Europe Est", "Amérique Nord", "Amérique Sud",
-        "Asie-Pacifique", "Moyen-Orient", "Afrique Nord", "Afrique Sub-saharienne"
-    ]
-    print(f"\n3. ZONE GÉOGRAPHIQUE :")
-    for i, zone in enumerate(zones, 1):
-        print(f"   {i}. {zone}")
 
-    while True:
-        try:
-            choix = int(input("\nVotre choix (1-8) : "))
-            if 1 <= choix <= 8:
-                zone = zones[choix-1]
-                break
-            else:
-                print("Veuillez choisir un nombre entre 1 et 8")
-        except ValueError:
-            print("Veuillez entrer un nombre valide")
+def validate_cli(argv):
+    """
+    Validation anticipée du profil passé en options, sans rien écrire ni rien
+    demander : run_pipeline.sh l'appelle avant D1 pour qu'une faute de frappe
+    n'échoue pas après la collecte. Renvoie 0 si valide, 2 sinon.
+    """
+    import argparse
+    parser = argparse.ArgumentParser(add_help=False)
+    for _key, opt, _label in PROFILE_FIELDS:
+        parser.add_argument(opt, default=None)
+    args, _ = parser.parse_known_args(argv)
+    options = profile_options()
+    try:
+        for key, opt, _label in PROFILE_FIELDS:
+            value = getattr(args, key)
+            if value:
+                match_option(key, value, options[key])
+    except ProfileError as e:
+        ModernUI.status(str(e), "error")
+        return 2
+    return 0
 
-    # 4. Note ASM : issue de D1 (run_summary.json) si disponible, sinon demandée.
+
+def get_asm():
+    """
+    Note ASM : la criticité calculée par D1 (run_summary.json). Elle n'est jamais
+    saisie : sans elle, D3 s'arrête et demande de lancer D1.
+    """
     asm = _load_asm_from_d1()
-    if asm:
-        ModernUI.status(f"Note ASM (issue de D1) : {asm}", "info")
-    else:
-        asm_categories = [
-            "Critical (9.0-10.0)",
-            "High (6.0-8.9)",
-            "Medium (3.0-5.9)",
-            "Low (0.0-2.9)"
-        ]
-        print(f"\n4. NOTE ASM :")
-        for i, cat in enumerate(asm_categories, 1):
-            print(f"   {i}. {cat}")
+    if not asm:
+        raise ProfileError("Note ASM absente (run_summary.json de D1) : lancez d'abord la découverte d'actifs (D1).")
+    ModernUI.status(f"Note ASM (issue de D1) : {asm}", "info")
+    return asm
 
-        while True:
-            try:
-                choix = int(input("\nVotre choix (1-4) : "))
-                if 1 <= choix <= 4:
-                    asm = asm_categories[choix-1].split(" ")[0]  # Récupère "Critical", "High", etc.
-                    break
-                else:
-                    print("Veuillez choisir un nombre entre 1 et 4")
-            except ValueError:
-                print("Veuillez entrer un nombre valide")
-
-    return secteur, taille, zone, asm
 
 def convert_to_score(value):
     """Convertit les valeurs qualitatives en scores numériques (0-5)"""
@@ -383,6 +438,7 @@ def export_to_csv(results, secteur, taille, zone, asm):
 
 def display_results(results, secteur, taille, zone, asm, filter_stats):
     """Affichage console minimal — le détail complet est dans le CSV généré."""
+    exposia_events.count('actors', len(results))
     if not results:
         ModernUI.status("Aucune menace significative identifiée avec ce niveau de filtrage.", "warning")
         ModernUI.status("Essayez un niveau de filtrage moins strict (modéré ou complet).", "info")
@@ -401,16 +457,33 @@ def display_results(results, secteur, taille, zone, asm, filter_stats):
             "info",
         )
 
-def main():
-    """Point d'entrée : saisie du profil, analyse, affichage et export."""
+def main(argv=None):
+    """Point d'entrée : profil, analyse, affichage et export. Code de sortie : 0, 1 (erreur), 2 (profil)."""
     import argparse
+    import textwrap
+
+    class _HelpFormatter(argparse.HelpFormatter):
+        """Aide sans coupure aux traits d'union (Asie-Pacifique reste entier)."""
+        def _split_lines(self, text, width):
+            return textwrap.wrap(text, width, break_on_hyphens=False)
+
     parser = argparse.ArgumentParser(
-        description="Analyseur de menaces : produit threat_analysis_*.csv pour une campagne.")
+        formatter_class=_HelpFormatter,
+        description="Analyseur de menaces : produit threat_analysis_*.csv pour une campagne. "
+                    "Sans --secteur, --taille ou --zone, le champ manquant est demandé au clavier. "
+                    "Casse et accents indifférents ; « _ » à la place des espaces (Europe_Ouest).")
     parser.add_argument("--domain", default=None,
                         help="Domaine de la campagne (le CSV ira dans Result/<domaine>/data/)")
     parser.add_argument("-r", "--result-dir", default=None,
                         help="Dossier de campagne (alternative à --domain)")
-    args = parser.parse_args()
+    try:  # valeurs lues dans les matrices, affichées dans --help
+        _opts = {k: ", ".join(cli_value(o) for o in v) for k, v in profile_options().items()}
+    except (OSError, StopIteration):
+        _opts = {k: "valeur d'une matrice de Parameters/Threat_matrices/" for k in ("secteur", "taille", "zone")}
+    parser.add_argument("--secteur", default=None, help=f"Secteur d'activité : {_opts['secteur']}")
+    parser.add_argument("--taille", default=None, help=f"Taille de l'organisation : {_opts['taille']}")
+    parser.add_argument("--zone", default=None, help=f"Zone géographique : {_opts['zone']}")
+    args = parser.parse_args(argv)
 
     try:
         # Écrire le CSV dans le dossier data/ de la campagne concernée.
@@ -423,8 +496,11 @@ def main():
             ModernUI.status(f"{e}", "warning")
             ModernUI.status("Le CSV sera écrit dans le répertoire courant.", "info")
 
-        # Collecte des inputs utilisateur + niveau de filtrage
-        secteur, taille, zone, asm = get_user_inputs()
+        # Note ASM de D1 d'abord (inutile de saisir un profil si elle manque),
+        # puis profil : options, sinon saisie des seuls champs absents.
+        asm = get_asm()
+        secteur, taille, zone = resolve_profile(args.secteur, args.taille, args.zone)
+        ModernUI.status(f"Profil : {secteur}, {taille}, {zone}", "info")
 
         # Analyse des menaces avec nouvelle logique + filtrage
         results, filter_stats = analyze_threats(secteur, taille, zone, asm)
@@ -438,22 +514,33 @@ def main():
         if not csv_filename:
             ModernUI.status("Analyse terminée mais problème lors de l'export CSV", "warning")
 
-        # Ajout de la métrique D3 au récapitulatif du run (SUMMARY de fin de pipeline).
+        # Métrique D3 et profil déclaré dans le récapitulatif du run : le profil
+        # n'était écrit nulle part, et le digest (R12) ne pouvait pas l'afficher.
+        # La note ASM n'en fait pas partie : c'est criticality_rating, écrit par D1.
         try:
             _summary = {}
             if os.path.exists("run_summary.json"):
                 with open("run_summary.json", encoding="utf-8") as _f:
                     _summary = json.load(_f)
             _summary["threat_actors"] = len(results)
+            _summary["threat_profile"] = {"secteur": secteur, "taille": taille, "zone": zone}
             with open("run_summary.json", "w", encoding="utf-8") as _f:
                 json.dump(_summary, _f, ensure_ascii=False)
         except Exception as _e:
             ModernUI.status(f"Mise à jour run_summary.json impossible : {_e}", "warning")
+        return 0
 
+    except ProfileError as e:
+        ModernUI.status(str(e), "error")
+        return 2
     except KeyboardInterrupt:
         print(f"\n\nAnalyse interrompue par l'utilisateur.")
+        return 130
     except Exception as e:
+        # Code d'erreur non nul : sans lui, le pipeline poursuivait et R1 lisait
+        # le threat_analysis d'un run précédent.
         print(f"\nErreur lors de l'analyse: {e}")
+        return 1
 
 if __name__ == "__main__":
-    main()
+    _sys.exit(main())
