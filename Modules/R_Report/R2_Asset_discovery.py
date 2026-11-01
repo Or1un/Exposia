@@ -17,6 +17,9 @@ from html import escape as esc  # échappement HTML de toute valeur injectée da
 import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 import exposia_paths  # résolution centralisée des chemins
+import exposia_vocab as vocab  # codes stables (JSON canonique)
+import exposia_i18n as i18n  # langue des livrables (EXPOSIA_LANG)
+from exposia_i18n import tr
 import exposia_ui  # UI console centralisée (Colors, ModernUI)
 from exposia_ui import Colors, ModernUI
 try:  # le thème peut être nommé report_theme.py ou R0_report_theme.py
@@ -27,12 +30,30 @@ import os
 import glob
 from datetime import datetime
 from collections import Counter
-from weasyprint import HTML, CSS
-from weasyprint.text.fonts import FontConfiguration
 
 # Libellés de catégories affichés dans la répartition (les données gardent le libellé d'origine).
 CAT_LABELS_FR = {"Application web": "Applications web",
                  "Non catégorisé": "Services non catégorisés"}
+# Libellés anglais au pluriel pour la répartition (code de catégorie -> libellé).
+CAT_LABELS_EN = {"web_application": "Web applications", None: "Uncategorised services"}
+
+# Textes fixes de la partie 2 (FR, EN)
+T = {
+    'title_tag': ("Rapport Asset Discovery", "Asset Discovery report"),
+    'kicker': ("Partie 2 &middot; Actifs", "Part 2 &middot; Assets"),
+    'title': ("Quel est votre p&eacute;rim&egrave;tre expos&eacute;&nbsp;?", "What is your exposed perimeter?"),
+    'method': ("Notre d&eacute;couverte repose exclusivement sur des <b>m&eacute;thodes passives et non intrusives</b>, sans aucun impact sur vos syst&egrave;mes&nbsp;: analyse des certificats SSL publics, r&eacute;solution DNS et examen des services expos&eacute;s &agrave; partir de donn&eacute;es ouvertes. Chaque service est cat&eacute;goris&eacute; et qualifi&eacute; selon sa <b>nature pr&eacute;sum&eacute;e</b>&nbsp;: <b>sensible</b> lorsqu'il s'agit d'un type de service habituellement r&eacute;serv&eacute; &agrave; un usage interne, <b>standard</b> sinon. Son <b>impact potentiel sur votre activit&eacute;</b> est ensuite estim&eacute; selon sa criticit&eacute; et son exposition. En clair&nbsp;: un inventaire <b>complet et actionnable</b>, obtenu sans jamais toucher &agrave; votre production.",
+               "Our discovery relies exclusively on <b>passive, non-intrusive methods</b>, with no impact on your systems: analysis of public SSL certificates, DNS resolution and review of exposed services based on open data. Each service is categorised and qualified according to its <b>presumed nature</b>: <b>sensitive</b> when it is a type of service usually reserved for internal use, <b>standard</b> otherwise. Its <b>potential impact on your business</b> is then estimated from its criticality and exposure. In short: a <b>complete and actionable</b> inventory, obtained without ever touching your production."),
+    'matrix': ("Matrice de d&eacute;couverte des actifs", "Asset discovery matrix"),
+    'th': ("<th>Rang</th><th>Sous-domaine</th><th>Service</th><th>Cat&eacute;gorie</th><th class=\"center\">Nature pr&eacute;sum&eacute;e</th><th class=\"center\">Impact</th>",
+           "<th>Rank</th><th>Subdomain</th><th>Service</th><th>Category</th><th class=\"center\">Presumed nature</th><th class=\"center\">Impact</th>"),
+    'note': ("Nature pr&eacute;sum&eacute;e&nbsp;: d&eacute;duite du type de service (port, protocole, nom du sous-domaine). &laquo;&nbsp;Sensible&nbsp;&raquo; signale un service habituellement r&eacute;serv&eacute; &agrave; un usage interne, &agrave; confirmer avec vos &eacute;quipes.",
+             "Presumed nature: inferred from the type of service (port, protocol, subdomain name). &ldquo;Sensitive&rdquo; flags a service usually reserved for internal use, to be confirmed with your teams."),
+    'breakdown': ("R&eacute;partition par cat&eacute;gories de services", "Breakdown by service category"),
+    'sensitive': ("Sensible", "Sensitive"),
+    'standard': ("Standard", "Standard"),
+}
+IMPACT_LABELS = {'CRITIQUE': ('Critique', 'Critical'), 'HAUTE': ('Haute', 'High'), 'MOYENNE': ('Moyenne', 'Medium')}
 
 
 class AssetDiscoveryPDFGenerator:
@@ -321,6 +342,96 @@ class AssetDiscoveryPDFGenerator:
         .ip-more { display:block; font-size:7.5pt; color:#8A90AC; margin-top:.6mm; }
 """
 
+    # ------------------------------------------------------------------
+    # Données de la partie (source unique du PDF et du JSON canonique)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def build_in_short(stats):
+        """Encadré « En clair » : paragraphes de segments, et chiffres utilisés."""
+        if i18n.is_en():
+            return AssetDiscoveryPDFGenerator._build_in_short_en(stats)
+        seg = report_theme.seg
+        n_uncat = sum(c['count'] for c in stats['category_distribution'] if c['name'] == 'Non catégorisé')
+        # Services sans catégorie : déjà inclus dans le total, signalés pour que le
+        # décompte corresponde au graphique de répartition.
+        uncat = (f", dont {n_uncat} service{'s' if n_uncat > 1 else ''} "
+                 f"non catégorisé{'s' if n_uncat > 1 else ''}") if n_uncat else ""
+        para = [seg("Votre périmètre comprend "), seg(f"{stats['total_subdomains']} sous-domaines", True),
+                seg(" et "), seg(f"{stats['distinct_services']} services distincts", True),
+                seg(", répartis en "), seg(f"{stats['service_categories']} catégories", True),
+                seg(f"{uncat}. ")]
+        # Services présumés sensibles (classification « Internal »).
+        nb_sens = stats['sensitive_services']
+        if nb_sens:
+            pl = 's' if nb_sens > 1 else ''
+            para += [seg("Parmi eux, "), seg(f"{nb_sens} service{pl} présumé{pl} sensible{pl}", True),
+                     seg(f" (administration, transfert de fichiers, base de données…)\u00a0: "
+                         f"généralement destiné{pl} à un usage interne, il{pl} "
+                         f"mérite{'nt' if nb_sens > 1 else ''} une vérification de "
+                         f"{'leur' if nb_sens > 1 else 'son'} accessibilité depuis Internet.")]
+        else:
+            para.append(seg("Aucun service habituellement réservé à un usage interne "
+                            "(administration, transfert de fichiers, base de données) n'a été "
+                            "repéré sur votre périmètre exposé."))
+        facts = {'subdomains': stats['total_subdomains'], 'services': stats['distinct_services'],
+                 'service_categories': stats['service_categories'], 'sensitive_services': nb_sens,
+                 'uncategorized_services': n_uncat}
+        return {'paragraphs': [para], 'facts': facts}
+
+    @staticmethod
+    def _build_in_short_en(stats):
+        """« In brief » en anglais : mêmes chiffres, mêmes faits que la version française."""
+        seg, pl = report_theme.seg, i18n.plural
+        n_uncat = sum(c['count'] for c in stats['category_distribution'] if c['name'] == 'Non catégorisé')
+        uncat = f", including {n_uncat} uncategorised {pl(n_uncat, 'service')}" if n_uncat else ""
+        n_sub, n_srv, n_cat = stats['total_subdomains'], stats['distinct_services'], stats['service_categories']
+        para = [seg("Your perimeter includes "), seg(f"{n_sub} {pl(n_sub, 'subdomain')}", True),
+                seg(" and "), seg(f"{n_srv} distinct {pl(n_srv, 'service')}", True),
+                seg(", spread across "), seg(f"{n_cat} {pl(n_cat, 'category', 'categories')}", True),
+                seg(f"{uncat}. ")]
+        nb_sens = stats['sensitive_services']
+        if nb_sens:
+            one = nb_sens == 1
+            para += [seg("Among them, "), seg(f"{nb_sens} presumed sensitive {pl(nb_sens, 'service')}", True),
+                     seg(" (administration, file transfer, database…): usually intended for internal use, "
+                         + ("it deserves a check of its" if one else "they deserve a check of their")
+                         + " accessibility from the Internet.")]
+        else:
+            para.append(seg("No service usually reserved for internal use (administration, file transfer, "
+                            "database) was spotted on your exposed perimeter."))
+        facts = {'subdomains': n_sub, 'services': n_srv, 'service_categories': n_cat,
+                 'sensitive_services': nb_sens, 'uncategorized_services': n_uncat}
+        return {'paragraphs': [para], 'facts': facts}
+
+    def build_data(self, processed_data):
+        """Bloc parts.assets du JSON canonique : « En clair » et données des visuels (codes)."""
+        stats, top = processed_data['stats'], processed_data['top_assets']
+        matrix = []
+        for rank, asset in enumerate(top, 1):
+            host = str(asset.get('Subdomain', '')).strip()
+            port = self._format_port(asset.get('Port', ''))
+            matrix.append({
+                'rank': rank, 'exposure_id': f"{host}:{port}", 'host': host, 'port': int(port),
+                'ips': list(asset.get('ip_addresses') or [asset.get('IP Address')]),
+                'category': vocab.code('service_category', asset.get('Catégorie')),
+                'nature': vocab.code('nature', asset.get('Internal_External_Classification')) or 'standard',
+                'business_impact': vocab.code('severity', asset.get('Impact business / opérationnel')),
+            })
+        return {
+            'in_short': self.build_in_short(stats),
+            'visuals': {
+                'key_figures': {'subdomains': stats['total_subdomains'], 'services': stats['distinct_services'],
+                                'service_categories': stats['service_categories'],
+                                'sensitive_services': stats['sensitive_services'], 'ips': stats['total_ips'],
+                                'internal_ips': stats['internal_ips'], 'external_ips': stats['external_ips']},
+                'category_distribution': [
+                    {'category': None if c['name'] == 'Non catégorisé' else vocab.code('service_category', c['name']),
+                     'count': c['count'], 'percentage': round(c['percentage'], 1)}
+                    for c in stats['category_distribution']],
+                'discovery_matrix': matrix,
+            },
+        }
+
     def generate_html_content(self, processed_data):
         """Génère le contenu HTML (système de design Exposia)."""
         stats = processed_data['stats']
@@ -333,7 +444,6 @@ class AssetDiscoveryPDFGenerator:
         org_disp = esc(org.capitalize()) if org else "—"
 
         imp_map = {'CRITIQUE': 'sev-critical', 'HAUTE': 'sev-high', 'MOYENNE': 'sev-medium'}
-        imp_disp = {'CRITIQUE': 'Critique', 'HAUTE': 'Haute', 'MOYENNE': 'Moyenne'}
         assets_rows = ""
         for index, asset in enumerate(top_assets):
             subdomain = esc(str(asset.get('Subdomain', 'N/A')))
@@ -343,16 +453,20 @@ class AssetDiscoveryPDFGenerator:
             if len(ips) > 1:
                 others = len(ips) - 1
                 endpoint += (f'<span class="ip-more">+{others} autre{"s" if others > 1 else ""} '
-                             f'adresse{"s" if others > 1 else ""}</span>')
+                             f'adresse{"s" if others > 1 else ""}</span>') if not i18n.is_en() else \
+                            f'<span class="ip-more">+{others} other {i18n.plural(others, "address", "addresses")}</span>'
             category = asset.get('Catégorie', 'Non catégorisé')
             if category in ['#N/A', '', 'None', None]:
                 category = 'Non catégorisé'
+            if i18n.is_en():
+                category = vocab.label('service_category', vocab.code('service_category', category), 'en',
+                                       fallback='Uncategorised') if category != 'Non catégorisé' else 'Uncategorised'
             classification = asset.get('Internal_External_Classification', '').upper()
             impact = asset.get('Impact business / opérationnel', 'LOW').upper()
             cls_class = 'cls-internal' if classification == 'INTERNAL' else 'cls-external'
-            cls_text = 'Sensible' if classification == 'INTERNAL' else ('Standard' if classification == 'EXTERNAL' else '&mdash;')
+            cls_text = tr(T, 'sensitive') if classification == 'INTERNAL' else (tr(T, 'standard') if classification == 'EXTERNAL' else '&mdash;')
             imp_class = imp_map.get(impact, 'sev-low')
-            imp_text = imp_disp.get(impact, 'Faible')
+            imp_text = i18n.pick(*IMPACT_LABELS.get(impact, ('Faible', 'Low')))
             rank_cls = ' r1' if index == 0 else ''
             assets_rows += f"""
       <tr><td><span class="rank{rank_cls}">{index + 1}</span></td><td><strong>{subdomain}</strong></td><td>{endpoint}</td><td>{esc(str(category))}</td><td class="center"><span class="cls-badge {cls_class}">{cls_text}</span></td><td class="center"><span class="sev-badge {imp_class}">{imp_text}</span></td></tr>"""
@@ -364,68 +478,48 @@ class AssetDiscoveryPDFGenerator:
             pct = cat_info['percentage']
             other = ' other' if name == 'Non catégorisé' else ''
             s = 's' if count > 1 else ''
+            if i18n.is_en():
+                code = None if name == 'Non catégorisé' else vocab.code('service_category', name)
+                shown = CAT_LABELS_EN.get(code) or vocab.label('service_category', code, 'en', fallback=name)
+                s = 's' if count != 1 else ''
+            else:
+                shown = CAT_LABELS_FR.get(name, name)
             cat_bars += f"""
       <div class="cat-bar{other}">
-        <div class="cbl"><span class="cn">{esc(str(CAT_LABELS_FR.get(name, name)))} ({count} service{s})</span><span class="cp">{('%.1f' % pct).replace('.', ',')}&nbsp;%</span></div>
+        <div class="cbl"><span class="cn">{esc(str(shown))} ({count} service{s})</span><span class="cp">{i18n.percent(pct)}</span></div>
         <div class="track"><div class="fill" style="width:{pct:.1f}%;"></div></div>
       </div>"""
 
-        # Phrase sur les services présumés sensibles (classification « Internal »).
-        nb_sens = stats['sensitive_services']
-        if nb_sens:
-            pl = 's' if nb_sens > 1 else ''
-            sensitive_sentence = (
-                f"Parmi eux, <strong>{nb_sens} service{pl} pr&eacute;sum&eacute;{pl} sensible{pl}</strong> "
-                f"(administration, transfert de fichiers, base de donn&eacute;es&hellip;)&nbsp;: "
-                f"g&eacute;n&eacute;ralement destin&eacute;{pl} &agrave; un usage interne, il{pl} "
-                f"m&eacute;rite{'nt' if nb_sens > 1 else ''} une v&eacute;rification de {'leur' if nb_sens > 1 else 'son'} accessibilit&eacute; depuis Internet."
-            )
-        else:
-            sensitive_sentence = (
-                "Aucun service habituellement r&eacute;serv&eacute; &agrave; un usage interne "
-                "(administration, transfert de fichiers, base de donn&eacute;es) n'a &eacute;t&eacute; "
-                "rep&eacute;r&eacute; sur votre p&eacute;rim&egrave;tre expos&eacute;."
-            )
-
-        # Services sans catégorie : déjà inclus dans le total, signalés pour que le
-        # décompte de l'encadré « En clair » corresponde au graphique de répartition.
-        n_uncat = sum(c['count'] for c in stats['category_distribution']
-                      if c['name'] == 'Non catégorisé')
-        if n_uncat:
-            uncat_clause = (f", dont {n_uncat} service{'s' if n_uncat > 1 else ''} "
-                            f"non cat&eacute;goris&eacute;{'s' if n_uncat > 1 else ''}")
-        else:
-            uncat_clause = ""
+        in_short = self.build_data(processed_data)['in_short']
 
         html = f"""<!DOCTYPE html>
-<html lang="fr">
-<head><meta charset="UTF-8"><title>Rapport Asset Discovery</title></head>
+<html lang="{i18n.lang()}">
+<head><meta charset="UTF-8"><title>{tr(T, 'title_tag')}</title></head>
 <body>
-  <div class="rh-brand">E<span class="x">x</span>posia</div>
-  <div class="rh-doc">Rapport d'analyse &middot; {org_disp}</div>
+  {report_theme.doc_header(org_disp)}
 
-  <div class="kicker">Partie 2 &middot; Actifs</div>
-  <div class="part-title">Quel est votre p&eacute;rim&egrave;tre expos&eacute;&nbsp;?</div>
+  <div class="kicker">{tr(T, 'kicker')}</div>
+  <div class="part-title">{tr(T, 'title')}</div>
   <div class="rule"></div>
 
   <div class="callout">
-    <div class="ttl">En clair</div>
-    <p>Votre p&eacute;rim&egrave;tre comprend <strong>{stats['total_subdomains']} sous-domaines</strong> et <strong>{stats['distinct_services']} services distincts</strong>, r&eacute;partis en <strong>{stats['service_categories']} cat&eacute;gories</strong>{uncat_clause}. {sensitive_sentence}</p>
+    <div class="ttl">{tr(report_theme.T, 'in_short')}</div>
+    {report_theme.render_in_short(in_short['paragraphs'])}
   </div>
 
-  <div class="xsection"><span class="t">M&eacute;thodologie</span></div>
-  <p class="prose">Notre d&eacute;couverte repose exclusivement sur des <b>m&eacute;thodes passives et non intrusives</b>, sans aucun impact sur vos syst&egrave;mes&nbsp;: analyse des certificats SSL publics, r&eacute;solution DNS et examen des services expos&eacute;s &agrave; partir de donn&eacute;es ouvertes. Chaque service est cat&eacute;goris&eacute; et qualifi&eacute; selon sa <b>nature pr&eacute;sum&eacute;e</b>&nbsp;: <b>sensible</b> lorsqu'il s'agit d'un type de service habituellement r&eacute;serv&eacute; &agrave; un usage interne, <b>standard</b> sinon. Son <b>impact potentiel sur votre activit&eacute;</b> est ensuite estim&eacute; selon sa criticit&eacute; et son exposition. En clair&nbsp;: un inventaire <b>complet et actionnable</b>, obtenu sans jamais toucher &agrave; votre production.</p>
+  <div class="xsection"><span class="t">{tr(report_theme.T, 'methodology')}</span></div>
+  <p class="prose">{tr(T, 'method')}</p>
 
-  <div class="xsection" style="page-break-before: always;"><span class="t">Matrice de d&eacute;couverte des actifs</span></div>
+  <div class="xsection" style="page-break-before: always;"><span class="t">{tr(T, 'matrix')}</span></div>
   <table class="xtable assets">
     <colgroup><col style="width:7%"><col style="width:28%"><col style="width:20%"><col style="width:14%"><col style="width:16%"><col style="width:15%"></colgroup>
-    <thead><tr><th>Rang</th><th>Sous-domaine</th><th>Service</th><th>Cat&eacute;gorie</th><th class="center">Nature pr&eacute;sum&eacute;e</th><th class="center">Impact</th></tr></thead>
+    <thead><tr>{tr(T, 'th')}</tr></thead>
     <tbody>{assets_rows}
     </tbody>
   </table>
-  <p class="table-note">Nature pr&eacute;sum&eacute;e&nbsp;: d&eacute;duite du type de service (port, protocole, nom du sous-domaine). &laquo;&nbsp;Sensible&nbsp;&raquo; signale un service habituellement r&eacute;serv&eacute; &agrave; un usage interne, &agrave; confirmer avec vos &eacute;quipes.</p>
+  <p class="table-note">{tr(T, 'note')}</p>
 
-  <div class="xsection" style="page-break-before: always;"><span class="t">R&eacute;partition par cat&eacute;gories de services</span></div>
+  <div class="xsection" style="page-break-before: always;"><span class="t">{tr(T, 'breakdown')}</span></div>
   <div class="cat-bars">{cat_bars}
   </div>
 </body>
@@ -435,6 +529,8 @@ class AssetDiscoveryPDFGenerator:
     def generate_pdf_report(self, processed_data):
         """Génère le rapport PDF avec WeasyPrint"""
 
+        from weasyprint import HTML, CSS  # PDF seulement : build_data reste importable sans WeasyPrint
+        from weasyprint.text.fonts import FontConfiguration
         try:
             # Génération du contenu HTML
             html_content = self.generate_html_content(processed_data)
@@ -513,3 +609,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def build_assets_data(data_dir='.'):
+    """parts.assets du JSON canonique, calculé depuis le dossier data/ d'une campagne."""
+    generator = AssetDiscoveryPDFGenerator(data_dir=data_dir)
+    return generator.build_data(generator.process_data(generator.load_csv_data(generator.find_csv_file())))
