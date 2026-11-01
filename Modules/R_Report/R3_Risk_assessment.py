@@ -16,6 +16,43 @@ from html import escape as esc  # échappement HTML de toute valeur injectée da
 import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 import exposia_paths  # résolution centralisée des chemins
+import exposia_vocab as vocab  # codes stables (JSON canonique)
+import exposia_scoring as scoring  # planchers EPSS et KEV (texte de la méthodologie)
+import exposia_i18n as i18n  # langue des livrables (EXPOSIA_LANG)
+from exposia_i18n import tr
+
+# Textes fixes de la partie 3 (FR, EN)
+T = {
+    'title_tag': ("Rapport Risk Assessment", "Risk Assessment report"),
+    'kicker': ("Partie 3 &middot; Risques", "Part 3 &middot; Risks"),
+    'title': ("Quels impacts sur votre business&nbsp;?", "What is the impact on your business?"),
+    'method_intro': ("Notre approche combine l'<b>analyse des impacts op&eacute;rationnels</b> avec des <b>sc&eacute;narios d'attaque types</b>, repr&eacute;sentatifs des attaques courantes sur vos services expos&eacute;s et sur les vuln&eacute;rabilit&eacute;s identifi&eacute;es. Chaque sc&eacute;nario est &eacute;valu&eacute; selon sa <b>criticit&eacute; contextuelle</b>, int&eacute;grant&nbsp;:",
+                     "Our approach combines <b>operational impact analysis</b> with <b>typical attack scenarios</b>, representative of common attacks on your exposed services and on the identified vulnerabilities. Each scenario is assessed according to its <b>contextual criticality</b>, which takes into account:"),
+    'li_cvss': ("la <b>criticit&eacute; technique</b> (CVSS),", "<b>technical severity</b> (CVSS),"),
+    'li_epss': ("la <b>probabilit&eacute; d'exploitation</b> (EPSS),", "the <b>likelihood of exploitation</b> (EPSS),"),
+    'li_kev': ("l'<b>exploitation av&eacute;r&eacute;e</b> (catalogue KEV de la CISA),", "<b>confirmed exploitation</b> (CISA KEV catalog),"),
+    'li_impact': ("l'<b>impact m&eacute;tier</b> du service concern&eacute; (interruption, fuite de donn&eacute;es, perte financi&egrave;re, conformit&eacute;).",
+                  "the <b>business impact</b> of the service concerned (disruption, data leak, financial loss, compliance)."),
+    'method_end': ("En clair&nbsp;: comprendre <b>comment une menace technique peut affecter votre activit&eacute;</b>, selon sa probabilit&eacute; et son impact potentiel.",
+                   "In short: understanding <b>how a technical threat can affect your business</b>, based on its likelihood and potential impact."),
+    'matrix': ("Matrice de priorisation des risques", "Risk prioritization matrix"),
+    'th': ("<th>Rang</th><th>Actif</th><th>Service</th><th class=\"center\">Criticit&eacute;</th><th class=\"center\">Exploits</th><th class=\"center\">Sc&eacute;narios applicables</th>",
+           "<th>Rank</th><th>Asset</th><th>Service</th><th class=\"center\">Criticality</th><th class=\"center\">Exploits</th><th class=\"center\">Applicable scenarios</th>"),
+    'scen_title': ("Sc&eacute;narios d'attaque types sur vos actifs critiques", "Typical attack scenarios on your critical assets"),
+    'scen_note': ("Ces sc&eacute;narios illustrent la mani&egrave;re dont un attaquant pourrait exploiter vos services les plus expos&eacute;s. Lorsqu'une vuln&eacute;rabilit&eacute; pr&eacute;cise est en cause, sa r&eacute;f&eacute;rence (CVE) est indiqu&eacute;e&nbsp;; les autres sc&eacute;narios d&eacute;crivent des attaques courantes sur ce type de service.",
+                  "These scenarios illustrate how an attacker could exploit your most exposed services. When a specific vulnerability is involved, its reference (CVE) is given; the other scenarios describe common attacks on this type of service."),
+    'scenario': ("Sc&eacute;nario", "Scenario"),
+    'common': ("Attaque courante sur ce service", "Common attack on this service"),
+    'kev_ransom': ("Exploit&eacute;e (KEV, ran&ccedil;ongiciels)", "Exploited (KEV, ransomware)"),
+    'kev': ("Exploit&eacute;e (KEV)", "Exploited (KEV)"),
+    'recon': ("Reconnaissance", "Reconnaissance"),
+    'exploit': ("Exploitation", "Exploitation"),
+    'impact': ("Impact", "Impact"),
+    'none': ("Aucun sc&eacute;nario d'attaque d&eacute;taill&eacute; identifi&eacute; sur les actifs critiques.",
+             "No detailed attack scenario identified on the critical assets."),
+}
+LEVEL_TEXT = {'critical': ('Critique', 'Critical'), 'high': ('Élevé', 'High'),
+              'medium': ('Moyen', 'Medium'), 'low': ('Faible', 'Low')}
 import exposia_ui  # UI console centralisée (Colors, ModernUI)
 from exposia_ui import Colors, ModernUI
 try:  # le thème peut être nommé report_theme.py ou R0_report_theme.py
@@ -26,8 +63,6 @@ import os
 import glob
 from datetime import datetime
 from collections import defaultdict, Counter
-from weasyprint import HTML, CSS
-from weasyprint.text.fonts import FontConfiguration
 
 # Rang de l'impact métier du service (criticité dans services_list.csv), utilisé
 # pour départager deux actifs de même qualification : à qualification égale, un
@@ -90,6 +125,8 @@ class RiskAssessmentPDFGenerator:
         optional_aliases = {
             'Attack_Path_Type': ['Attack_Path_Type', 'attack_path_type'],
             'Impact business / opérationnel': ['Impact business / opérationnel', 'business_impact'],
+            'KEV': ['KEV', 'kev'],
+            'KEV Ransomware': ['KEV Ransomware', 'kev_ransomware'],
         }
         try:
             best = None
@@ -257,6 +294,16 @@ class RiskAssessmentPDFGenerator:
                 unique_cves.add(cve)
         return len(unique_cves)
 
+    @staticmethod
+    def _is_kev(row):
+        """Vrai si la CVE de la ligne figure au catalogue CISA KEV (exploitation confirmée)."""
+        return str(row.get('KEV', '') or '').strip() == 'Yes'
+
+    def count_kev_cves(self, csv_data):
+        """CVE distinctes inscrites au catalogue KEV."""
+        return len({str(r.get('Vulnerability (CVE)', '')).strip() for r in csv_data
+                    if self._is_kev(r) and not self._is_port_path(r)})
+
     def count_unique_exploits(self, csv_data):
         """Compte le nombre d'exploits publics uniques."""
         unique_exploits = set()
@@ -352,13 +399,17 @@ class RiskAssessmentPDFGenerator:
         unique_attack_paths = self.count_unique_attack_paths(raw_data)
         unique_exploits = self.count_unique_exploits(raw_data)
         critical_assets = len([asset for asset in data['assets'] if asset['level'] == 'Critical'])
-        top_services = list(set([asset['service'] for asset in data['top_10_assets'][:3] if asset['service'] and asset['service'] != '#N/A']))[:3]
+        # Ordre d'apparition (actifs les plus critiques d'abord) : un set() donnait un
+        # ordre qui changeait d'une exécution à l'autre (hachage des chaînes).
+        top_services = list(dict.fromkeys(asset['service'] for asset in data['top_10_assets'][:3]
+                                          if asset['service'] and asset['service'] != '#N/A'))[:3]
         top_asset = data['top_10_assets'][0] if data['top_10_assets'] else None
         top_asset_name = top_asset['subdomain_display'] if top_asset else "N/A"
         return {
             'unique_cves': unique_cves,
             'unique_attack_paths': unique_attack_paths,
             'unique_exploits': unique_exploits,
+            'kev_cves': self.count_kev_cves(raw_data),
             'critical_assets': critical_assets,
             'top_services': top_services,
             'top_asset_name': top_asset_name,
@@ -415,6 +466,175 @@ class RiskAssessmentPDFGenerator:
         .section-note { font-size:9pt; color:#6A7191; line-height:1.55; margin:0 0 4mm; }
 """
 
+    # ------------------------------------------------------------------
+    # Données de la partie (source unique du PDF et du JSON canonique)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def build_in_short(summary):
+        """
+        Encadré « En clair », formulé pour les cas vides (aucune CVE, aucun
+        scénario, aucun exploit) afin de ne jamais afficher « 0 vulnérabilités ».
+        """
+        if i18n.is_en():
+            return RiskAssessmentPDFGenerator._build_in_short_en(summary)
+        seg = report_theme.seg
+        n_cves, n_paths, n_expl = summary['unique_cves'], summary['unique_attack_paths'], summary['unique_exploits']
+        n_kev = summary['kev_cves']
+
+        def _pl(n, word):
+            return f"{n} {word}{'s' if n > 1 else ''}"
+        p = []
+        if n_cves:
+            p += [seg("Nous avons identifié "), seg(_pl(n_cves, 'vulnérabilité'), True), seg(" et en avons tiré "),
+                  seg(f"{_pl(n_paths, 'scénario')} d'attaque type{'s' if n_paths > 1 else ''} "
+                      f"distinct{'s' if n_paths > 1 else ''}", True),
+                  seg(" (un même scénario peut concerner plusieurs actifs).")]
+        elif n_paths:
+            p += [seg("Aucune vulnérabilité connue n'a été identifiée sur vos services exposés. "
+                      "Leur seule exposition permet néanmoins d'envisager "),
+                  seg(f"{_pl(n_paths, 'scénario')} d'attaque type{'s' if n_paths > 1 else ''}", True),
+                  seg(f", lié{'s' if n_paths > 1 else ''} au type de service.")]
+        else:
+            p += [seg("Aucune vulnérabilité connue ni scénario d'attaque significatif n'a été identifié "
+                      "sur vos services exposés. Le principal levier reste de "),
+                  seg("limiter les services accessibles depuis Internet", True), seg(" au strict nécessaire.")]
+        if n_expl:
+            vuln_ref = ("certaines des vulnérabilités identifiées" if n_cves > 1 else "la vulnérabilité identifiée")
+            if n_expl > 1:
+                p += [seg(f" Des exploits publics sont référencés pour {vuln_ref}\u00a0: "),
+                      seg(f"{n_expl} exploits", True), seg(" sont recensés.")]
+            else:
+                p += [seg(" Un "), seg("exploit public", True), seg(f" est référencé pour {vuln_ref}.")]
+        if n_kev:
+            p += [seg(" "), seg(_pl(n_kev, 'vulnérabilité'), True),
+                  seg(f" {'figurent' if n_kev > 1 else 'figure'} au catalogue de la CISA des vulnérabilités "),
+                  seg("activement exploitées", True),
+                  seg(f" (KEV)\u00a0: {'elles sont' if n_kev > 1 else 'elle est'} à traiter en premier.")]
+        if n_cves or n_paths:
+            p += [seg(" Parmi vos actifs, "), seg(str(summary['top_asset_name']), True),
+                  seg(" se démarque et nécessite une attention particulière.")]
+            cats = [str(c) for c in summary['top_services']]
+            if cats:
+                if len(cats) == 1:
+                    p += [seg(" Les vecteurs d'attaque se concentrent sur la catégorie "), seg(cats[0], True), seg(".")]
+                else:
+                    p.append(seg(" Les vecteurs d'attaque se concentrent sur les catégories "))
+                    for i, c in enumerate(cats):
+                        p.append(seg(c, True))
+                        p.append(seg(", " if i < len(cats) - 2 else " et " if i == len(cats) - 2 else "."))
+        facts = {'cves': n_cves, 'attack_scenarios': n_paths, 'exploits': n_expl, 'kev_cves': n_kev,
+                 'top_asset': str(summary['top_asset_name']) if (n_cves or n_paths) else None,
+                 'top_categories': [vocab.code('service_category', c) for c in summary['top_services']]}
+        return {'paragraphs': [p], 'facts': facts}
+
+    @staticmethod
+    def _build_in_short_en(summary):
+        """« In brief » en anglais : mêmes cas, mêmes chiffres que la version française."""
+        seg, pl = report_theme.seg, i18n.plural
+        n_cves, n_paths, n_expl = summary['unique_cves'], summary['unique_attack_paths'], summary['unique_exploits']
+        n_kev = summary['kev_cves']
+        p = []
+        if n_cves:
+            p += [seg("We identified "), seg(f"{n_cves} {pl(n_cves, 'vulnerability', 'vulnerabilities')}", True),
+                  seg(" and derived "),
+                  seg(f"{n_paths} distinct typical attack {pl(n_paths, 'scenario')}", True),
+                  seg(" from " + ("it" if n_cves == 1 else "them") + " (the same scenario may apply to several assets).")]
+        elif n_paths:
+            p += [seg("No known vulnerability was identified on your exposed services. Their exposure alone "
+                      "nevertheless points to "),
+                  seg(f"{n_paths} typical attack {pl(n_paths, 'scenario')}", True),
+                  seg(", linked to the type of service.")]
+        else:
+            p += [seg("No known vulnerability or significant attack scenario was identified on your exposed "
+                      "services. The main lever remains "),
+                  seg("limiting the services reachable from the Internet", True), seg(" to what is strictly necessary.")]
+        if n_expl:
+            vuln_ref = "some of the identified vulnerabilities" if n_cves > 1 else "the identified vulnerability"
+            if n_expl > 1:
+                p += [seg(f" Public exploits are referenced for {vuln_ref}: "),
+                      seg(f"{n_expl} exploits", True), seg(" are listed.")]
+            else:
+                p += [seg(" A "), seg("public exploit", True), seg(f" is referenced for {vuln_ref}.")]
+        if n_kev:
+            p += [seg(" "), seg(f"{n_kev} {pl(n_kev, 'vulnerability', 'vulnerabilities')}", True),
+                  seg(f" {'is' if n_kev == 1 else 'are'} listed in the CISA catalog of "),
+                  seg("actively exploited vulnerabilities", True),
+                  seg(f" (KEV): {'it should' if n_kev == 1 else 'they should'} be handled first.")]
+        if n_cves or n_paths:
+            p += [seg(" Among your assets, "), seg(str(summary['top_asset_name']), True),
+                  seg(" stands out and requires particular attention.")]
+            cats = [vocab.label('service_category', vocab.code('service_category', c), 'en', fallback=str(c))
+                    for c in summary['top_services']]
+            if cats:
+                if len(cats) == 1:
+                    p += [seg(" Attack vectors are concentrated on the "), seg(cats[0], True), seg(" category.")]
+                else:
+                    p.append(seg(" Attack vectors are concentrated on the "))
+                    for i, c in enumerate(cats):
+                        p.append(seg(c, True))
+                        p.append(seg(", " if i < len(cats) - 2 else " and " if i == len(cats) - 2 else " categories."))
+        facts = {'cves': n_cves, 'attack_scenarios': n_paths, 'exploits': n_expl, 'kev_cves': n_kev,
+                 'top_asset': str(summary['top_asset_name']) if (n_cves or n_paths) else None,
+                 'top_categories': [vocab.code('service_category', c) for c in summary['top_services']]}
+        return {'paragraphs': [p], 'facts': facts}
+
+    @staticmethod
+    def _service_label(name):
+        """Catégorie de service affichée : libellé de la langue du run."""
+        if not i18n.is_en():
+            return str(name)
+        return vocab.label('service_category', vocab.code('service_category', name), 'en', fallback=str(name))
+
+    @staticmethod
+    def _asset_exploits(asset):
+        """Exploits publics distincts référencés sur les scénarios d'un actif."""
+        unique = set()
+        for path in asset['all_attack_paths']:
+            exploits = (path.get('Exploits', '') or '').strip()
+            if exploits and exploits not in ('#N/A', 'None', '', 'No unique public exploit found'):
+                for exploit in (exploits.split(',') if ',' in exploits else [exploits]):
+                    unique.add(exploit.strip())
+        return len(unique)
+
+    def build_data(self, data):
+        """
+        Bloc parts.risks du JSON canonique. Les scénarios des cartes portent leur
+        récit (reconnaissance, exploitation, impact) : R13 les remplace par
+        l'identifiant du catalogue de scénarios.
+        """
+        summary = self.generate_executive_summary(data)
+        top = data['top_10_assets']
+
+        def _port(value):
+            try:
+                return int(float(value))
+            except (TypeError, ValueError):
+                return None
+        matrix = [{
+            'rank': rank, 'exposure_id': f"{a['subdomain_display']}:{_port(a['port'])}",
+            'host': a['subdomain_display'], 'port': _port(a['port']),
+            'category': vocab.code('service_category', a['service']),
+            'severity': vocab.code('severity', a['level']) or 'low',
+            'exploits': self._asset_exploits(a), 'scenario_count': a['attack_paths_count'],
+        } for rank, a in enumerate(top, 1)]
+        cards = []
+        for card in self.build_scenario_cards(top):
+            scenarios = []
+            for path in card['top_paths']:
+                cve = self._path_cve(path) or None
+                scenarios.append({
+                    'cve': cve, 'severity': vocab.code('severity', path.get('Exposia - Qualification')) or 'low',
+                    'kev': bool(cve) and self._is_kev(path),
+                    'reconnaissance': str(path.get('Reconnaissance', '')), 'exploitation': str(path.get('Exploitation', '')),
+                    'impact': str(path.get('Impact', '')),
+                })
+            cards.append({'hosts': list(card['subdomains']), 'ips': list(card['ip_addresses']),
+                          'ports': [_port(x) for x in card['ports']],
+                          'category': vocab.code('service_category', card['service']),
+                          'severity': vocab.code('severity', card['level']) or 'low', 'scenarios': scenarios})
+        return {'in_short': self.build_in_short(summary),
+                'visuals': {'priority_matrix': matrix, 'scenario_cards': cards}}
+
     def generate_html_content(self, data):
         """Génère le contenu HTML (système de design Exposia)."""
         summary = self.generate_executive_summary(data)
@@ -426,111 +646,58 @@ class RiskAssessmentPDFGenerator:
             org = ""
         org_disp = esc(org.capitalize()) if org else "—"
 
-        lvl_text = {'critical': 'Critique', 'high': 'Élevé', 'medium': 'Moyen', 'low': 'Faible'}
+        lvl_text = {k: i18n.pick(*v) for k, v in LEVEL_TEXT.items()}
+        low_txt = lvl_text['low']
         services_str = ', '.join(summary['top_services']) if summary['top_services'] else "—"
 
-        # Encadré « En clair » : formulation adaptée aux cas vides (aucune CVE,
-        # aucun scénario, aucun exploit) pour ne jamais afficher « 0 vulnérabilités ».
-        n_cves, n_paths, n_expl = summary['unique_cves'], summary['unique_attack_paths'], summary['unique_exploits']
-        def _pl(n, word):
-            return f"{n} {word}{'s' if n > 1 else ''}"
-        parts = []
-        if n_cves:
-            parts.append(
-                f"Nous avons identifi&eacute; <strong>{_pl(n_cves, 'vuln&eacute;rabilit&eacute;')}</strong> "
-                f"et en avons tir&eacute; <strong>{_pl(n_paths, 'sc&eacute;nario')} d'attaque type{'s' if n_paths > 1 else ''} distinct{'s' if n_paths > 1 else ''}</strong> "
-                f"(un m&ecirc;me sc&eacute;nario peut concerner plusieurs actifs)."
-            )
-        elif n_paths:
-            parts.append(
-                "Aucune vuln&eacute;rabilit&eacute; connue n'a &eacute;t&eacute; identifi&eacute;e sur vos services expos&eacute;s. "
-                f"Leur seule exposition permet n&eacute;anmoins d'envisager <strong>{_pl(n_paths, 'sc&eacute;nario')} "
-                f"d'attaque type{'s' if n_paths > 1 else ''}</strong>, li&eacute;{'s' if n_paths > 1 else ''} au type de service."
-            )
-        else:
-            parts.append(
-                "Aucune vuln&eacute;rabilit&eacute; connue ni sc&eacute;nario d'attaque significatif n'a &eacute;t&eacute; "
-                "identifi&eacute; sur vos services expos&eacute;s. Le principal levier reste de <strong>limiter les services "
-                "accessibles depuis Internet</strong> au strict n&eacute;cessaire."
-            )
-        if n_expl:
-            vuln_ref = ("certaines des vuln&eacute;rabilit&eacute;s identifi&eacute;es" if n_cves > 1
-                        else "la vuln&eacute;rabilit&eacute; identifi&eacute;e")
-            if n_expl > 1:
-                parts.append(
-                    f"Des exploits publics sont r&eacute;f&eacute;renc&eacute;s pour {vuln_ref}&nbsp;: "
-                    f"<strong>{n_expl} exploits</strong> sont recens&eacute;s."
-                )
-            else:
-                parts.append(
-                    f"Un <strong>exploit public</strong> est r&eacute;f&eacute;renc&eacute; pour {vuln_ref}."
-                )
-        if n_cves or n_paths:
-            parts.append(
-                f"Parmi vos actifs, <strong>{esc(str(summary['top_asset_name']))}</strong> se d&eacute;marque et "
-                f"n&eacute;cessite une attention particuli&egrave;re."
-            )
-            cats = [esc(str(c)) for c in summary['top_services']]
-            if cats:
-                if len(cats) == 1:
-                    cats_txt = f"la cat&eacute;gorie <strong>{cats[0]}</strong>"
-                else:
-                    cats_txt = ("les cat&eacute;gories <strong>" + "</strong>, <strong>".join(cats[:-1])
-                                + f"</strong> et <strong>{cats[-1]}</strong>")
-                parts.append(f"Les vecteurs d'attaque se concentrent sur {cats_txt}.")
-        risk_callout = " ".join(parts)
+        in_short = self.build_in_short(summary)
 
         html = f"""<!DOCTYPE html>
-<html lang="fr">
-<head><meta charset="UTF-8"><title>Rapport Risk Assessment</title></head>
+<html lang="{i18n.lang()}">
+<head><meta charset="UTF-8"><title>{tr(T, 'title_tag')}</title></head>
 <body>
-  <div class="rh-brand">E<span class="x">x</span>posia</div>
-  <div class="rh-doc">Rapport d'analyse &middot; {org_disp}</div>
+  {report_theme.doc_header(org_disp)}
 
-  <div class="kicker">Partie 3 &middot; Risques</div>
-  <div class="part-title">Quels impacts sur votre business&nbsp;?</div>
+  <div class="kicker">{tr(T, 'kicker')}</div>
+  <div class="part-title">{tr(T, 'title')}</div>
   <div class="rule"></div>
 
   <div class="callout">
-    <div class="ttl">En clair</div>
-    <p>{risk_callout}</p>
+    <div class="ttl">{tr(report_theme.T, 'in_short')}</div>
+    {report_theme.render_in_short(in_short['paragraphs'])}
   </div>
 
-  <div class="xsection"><span class="t">M&eacute;thodologie</span></div>
+  <div class="xsection"><span class="t">{tr(report_theme.T, 'methodology')}</span></div>
   <div class="prose">
-    <p>Notre approche combine l'<b>analyse des impacts op&eacute;rationnels</b> avec des <b>sc&eacute;narios d'attaque types</b>, repr&eacute;sentatifs des attaques courantes sur vos services expos&eacute;s et sur les vuln&eacute;rabilit&eacute;s identifi&eacute;es. Chaque sc&eacute;nario est &eacute;valu&eacute; selon sa <b>criticit&eacute; contextuelle</b>, int&eacute;grant&nbsp;:</p>
+    <p>{tr(T, 'method_intro')}</p>
     <ul>
-      <li>la <b>criticit&eacute; technique</b> (CVSS),</li>
-      <li>la <b>probabilit&eacute; d'exploitation</b> (EPSS),</li>
-      <li>l'<b>impact m&eacute;tier</b> du service concern&eacute; (interruption, fuite de donn&eacute;es, perte financi&egrave;re, conformit&eacute;).</li>
+      <li>{tr(T, 'li_cvss')}</li>
+      <li>{tr(T, 'li_epss')}</li>
+      <li>{tr(T, 'li_kev')}</li>
+      <li>{tr(T, 'li_impact')}</li>
     </ul>
-    <p>En clair&nbsp;: comprendre <b>comment une menace technique peut affecter votre activit&eacute;</b>, selon sa probabilit&eacute; et son impact potentiel.</p>
+    <p>{tr(T, 'method_end')}</p>
   </div>
 
-  <div class="xsection" style="page-break-before: always;"><span class="t">Matrice de priorisation des risques</span></div>
+  <div class="xsection" style="page-break-before: always;"><span class="t">{tr(T, 'matrix')}</span></div>
   <table class="xtable risk">
     <colgroup><col style="width:8%"><col style="width:26%"><col style="width:24%"><col style="width:14%"><col style="width:14%"><col style="width:14%"></colgroup>
-    <thead><tr><th>Rang</th><th>Actif</th><th>Service</th><th class="center">Criticit&eacute;</th><th class="center">Exploits</th><th class="center">Sc&eacute;narios applicables</th></tr></thead>
+    <thead><tr>{tr(T, 'th')}</tr></thead>
     <tbody>"""
 
         for index, asset in enumerate(top_10_assets):
             level_class = self.get_level_class(asset['level'])
-            unique_exploits = set()
-            for path in asset['all_attack_paths']:
-                exploits = (path.get('Exploits', '') or '').strip()
-                if exploits and exploits not in ('#N/A', 'None', '', 'No unique public exploit found'):
-                    for exploit in (exploits.split(',') if ',' in exploits else [exploits]):
-                        unique_exploits.add(exploit.strip())
+            n_exploits = self._asset_exploits(asset)
             rank_cls = ' r1' if index == 0 else ''
             html += f"""
-      <tr><td><span class="rank{rank_cls}">{index + 1}</span></td><td><strong>{esc(str(asset['subdomain_display']))}</strong></td><td>{esc(str(asset['service']))} (Port {esc(str(asset['port']))})</td><td class="center"><span class="sev-badge sev-{level_class}">{lvl_text.get(level_class, 'Faible')}</span></td><td class="center">{len(unique_exploits)}</td><td class="center">{asset['attack_paths_count']}</td></tr>"""
+      <tr><td><span class="rank{rank_cls}">{index + 1}</span></td><td><strong>{esc(str(asset['subdomain_display']))}</strong></td><td>{esc(self._service_label(asset['service']))} (Port {esc(str(asset['port']))})</td><td class="center"><span class="sev-badge sev-{level_class}">{lvl_text.get(level_class, low_txt)}</span></td><td class="center">{n_exploits}</td><td class="center">{asset['attack_paths_count']}</td></tr>"""
 
-        html += """
+        html += f"""
     </tbody>
   </table>
 
-  <div class="xsection" style="page-break-before: always;"><span class="t">Sc&eacute;narios d'attaque types sur vos actifs critiques</span></div>
-  <p class="section-note">Ces sc&eacute;narios illustrent la mani&egrave;re dont un attaquant pourrait exploiter vos services les plus expos&eacute;s. Lorsqu'une vuln&eacute;rabilit&eacute; pr&eacute;cise est en cause, sa r&eacute;f&eacute;rence (CVE) est indiqu&eacute;e&nbsp;; les autres sc&eacute;narios d&eacute;crivent des attaques courantes sur ce type de service.</p>"""
+  <div class="xsection" style="page-break-before: always;"><span class="t">{tr(T, 'scen_title')}</span></div>
+  <p class="section-note">{tr(T, 'scen_note')}</p>"""
 
         scenario_cards = self.build_scenario_cards(top_10_assets)
         for card in scenario_cards:
@@ -542,33 +709,36 @@ class RiskAssessmentPDFGenerator:
   <div class="asset-card">
     <div class="asset-head sev-{level_class}">
       <span class="name">{esc(' / '.join(card['subdomains']).upper())}</span>
-      <span class="meta">Service {esc(str(card['service']))} &bull; {self._format_ips(card['ip_addresses'])} &bull; {ports_txt} &bull; {lvl_text.get(level_class, 'Faible')}</span>
+      <span class="meta">Service {esc(self._service_label(card['service']))} &bull; {self._format_ips(card['ip_addresses'])} &bull; {ports_txt} &bull; {lvl_text.get(level_class, low_txt)}</span>
     </div>
     <div class="asset-body">"""
             for i, path in enumerate(top_paths, 1):
                 cve = path.get('Vulnerability (CVE)', '#N/A')
-                qualification = lvl_text.get(self.get_level_class(path.get('Exposia - Qualification', 'Low')), 'Faible')
+                qualification = lvl_text.get(self.get_level_class(path.get('Exposia - Qualification', 'Low')), low_txt)
                 # Un scénario générique de service (PORT) n'affiche jamais de CVE, même
                 # si un fichier ancien en porte encore une sur la ligne.
                 has_cve = cve and cve not in ['#N/A', 'None', 'No data', ''] and not self._is_port_path(path)
                 if has_cve:
-                    header_text = f"Sc&eacute;nario #{i} &bull; {esc(str(cve))} &bull; {qualification}"
+                    header_text = f"{tr(T, 'scenario')} #{i} &bull; {esc(str(cve))} &bull; {qualification}"
+                    if self._is_kev(path):
+                        ransom = str(path.get('KEV Ransomware', '') or '').strip() == 'Known'
+                        header_text += f" &bull; {tr(T, 'kev_ransom') if ransom else tr(T, 'kev')}"
                 else:
-                    header_text = f"Sc&eacute;nario #{i} &bull; Attaque courante sur ce service &bull; {qualification}"
+                    header_text = f"{tr(T, 'scenario')} #{i} &bull; {tr(T, 'common')} &bull; {qualification}"
                 html += f"""
       <div class="apath">
         <div class="apath-head">{header_text}</div>
-        <div class="astep recon"><span class="lab">Reconnaissance</span><span class="txt">{esc(str(path.get('Reconnaissance', 'N/A')))}</span></div>
-        <div class="astep exploit"><span class="lab">Exploitation</span><span class="txt">{esc(str(path.get('Exploitation', 'N/A')))}</span></div>
-        <div class="astep impact"><span class="lab">Impact</span><span class="txt">{esc(str(path.get('Impact', 'N/A')))}</span></div>
+        <div class="astep recon"><span class="lab">{tr(T, 'recon')}</span><span class="txt">{esc(i18n.text(path.get('Reconnaissance', 'N/A')))}</span></div>
+        <div class="astep exploit"><span class="lab">{tr(T, 'exploit')}</span><span class="txt">{esc(i18n.text(path.get('Exploitation', 'N/A')))}</span></div>
+        <div class="astep impact"><span class="lab">{tr(T, 'impact')}</span><span class="txt">{esc(i18n.text(path.get('Impact', 'N/A')))}</span></div>
       </div>"""
             html += """
     </div>
   </div>"""
 
         if not scenario_cards:
-            html += """
-  <p class="prose" style="text-align:center; color:#8A90AC; font-style:italic;">Aucun sc&eacute;nario d'attaque d&eacute;taill&eacute; identifi&eacute; sur les actifs critiques.</p>"""
+            html += f"""
+  <p class="prose" style="text-align:center; color:#8A90AC; font-style:italic;">{tr(T, 'none')}</p>"""
 
         html += """
 </body>
@@ -577,6 +747,8 @@ class RiskAssessmentPDFGenerator:
 
     def generate_pdf_report(self, data):
         """Génère le rapport PDF avec WeasyPrint"""
+        from weasyprint import HTML, CSS  # PDF seulement : build_data reste importable sans WeasyPrint
+        from weasyprint.text.fonts import FontConfiguration
         try:
             html_content = self.generate_html_content(data)
             font_config = FontConfiguration()
@@ -629,3 +801,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def build_risks_data(data_dir='.'):
+    """parts.risks du JSON canonique, calculé depuis le dossier data/ d'une campagne."""
+    generator = RiskAssessmentPDFGenerator(data_dir=data_dir)
+    return generator.build_data(generator.process_data(generator.load_csv_data(generator.find_csv_file())))
