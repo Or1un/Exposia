@@ -21,6 +21,7 @@ _sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import exposia_paths  # résolution centralisée des chemins
 import exposia_ui  # UI console centralisée (Colors, ModernUI)
 from exposia_ui import Colors, ModernUI
+import exposia_i18n as i18n  # langue des livrables (EXPOSIA_LANG)
 import sys
 import glob
 import re
@@ -125,7 +126,7 @@ def ajouter_numeros_pages(fichier_pdf, fichier_sortie_numerote, sans_numero_dern
             packet = io.BytesIO()
             can = canvas.Canvas(packet, pagesize=(page_width, page_height))
 
-            text = f"Page {numero_affiche} sur {total_pages}"
+            text = i18n.pick(f"Page {numero_affiche} sur {total_pages}", f"Page {numero_affiche} of {total_pages}")
             can.setFont(font_name, 8)
             can.setFillColor(HexColor("#8A90AC"))  # gris-indigo atténué
 
@@ -251,16 +252,16 @@ def assembler_pdfs(fichiers_pdf, fichier_sortie):
         traceback.print_exc()
         return False
 
-# Libellés des signets PDF par motif de fichier (None = pas de signet).
+# Libellés des signets PDF par motif de fichier, (FR, EN) (None = pas de signet).
 LIBELLES_SIGNETS = {
-    "rapport_": "Page de garde",
-    "disclaimer_report_": "Avant-propos",
-    "table_of_contents_": "Sommaire",
-    "synthesis_global_report_": "Synthèse",
-    "threat_modeling_report_": "Partie 1 · Menaces",
-    "asset_discovery_report_": "Partie 2 · Actifs",
-    "risk_assessment_report_": "Partie 3 · Risques",
-    "mitigation_plan_report_": "Partie 4 · Mitigation",
+    "rapport_": ("Page de garde", "Cover"),
+    "disclaimer_report_": ("Avant-propos", "Foreword"),
+    "table_of_contents_": ("Sommaire", "Contents"),
+    "synthesis_global_report_": ("Synthèse", "Summary"),
+    "threat_modeling_report_": ("Partie 1 · Menaces", "Part 1 · Threats"),
+    "asset_discovery_report_": ("Partie 2 · Actifs", "Part 2 · Assets"),
+    "risk_assessment_report_": ("Partie 3 · Risques", "Part 3 · Risks"),
+    "mitigation_plan_report_": ("Partie 4 · Mitigation", "Part 4 · Mitigation"),
     "back_cover_report_": None,
 }
 
@@ -296,7 +297,7 @@ def inserer_sommaire(dossier, fichiers, motif_par_fichier, organisation):
         ordre = fichiers[:position] + [chemin_toc] + fichiers[position:]
         for f in ordre:
             motif = "table_of_contents_" if f == chemin_toc else motif_par_fichier[f]
-            for m, surtitre, titre in sommaire.TOC_PARTS:
+            for m, surtitre, titre in sommaire.toc_parts():
                 if motif == m:
                     entrees.append((surtitre, titre, debut))
             debut += pages_toc if f == chemin_toc else nb_pages[f]
@@ -324,6 +325,7 @@ def inserer_sommaire(dossier, fichiers, motif_par_fichier, organisation):
     debut = 0
     for f in ordre:
         libelle = LIBELLES_SIGNETS.get(motif_par_fichier[f])
+        libelle = i18n.pick(*libelle) if libelle else None
         if libelle:
             navigation["signets"].append((libelle, debut))
         debut += nb_pages[f]
@@ -484,7 +486,7 @@ def main():
     if args.output:
         fichier_sortie = args.output
     elif organisation:
-        fichier_sortie = f"Rapport_Final_{organisation}_{timestamp}.pdf"
+        fichier_sortie = f"{i18n.pick('Rapport_Final', 'Final_Report')}_{organisation}_{timestamp}.pdf"
     else:
         fichier_sortie = f"rapport_complet_{timestamp}.pdf"
 
