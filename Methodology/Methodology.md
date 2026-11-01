@@ -41,7 +41,7 @@ The overall rating is a prioritization aid, not a substitute for reviewing criti
 ```
                       Parameters/  (CSV: ports, paths, measures, matrices, CVSS)
                            │
-   domain ──► D1 discovery ──► D2 mitigation ──► D3 threats (interactive)
+   domain ──► D1 discovery ──► D2 mitigation ──► D3 threats (profile)
                 │  Exposia_<domain>.csv  │ + measures   │ threat_analysis_*.csv
                 │  run_summary.json      │              │
                 ▼                        ▼              ▼
@@ -50,14 +50,19 @@ The overall rating is a prioritization aid, not a substitute for reviewing criti
                                                          ▼
                                        R9 assembly ◄── R11 table of contents
                                                          ▼
-                          Rapport_Final_*.pdf  +  R10 → Exposia_<domain>_presentation.csv
+                                                Rapport_Final_*.pdf
+
+   data/ ──► R13 → Exposia_<domain>_results.json ──► R12 → Exposia_<domain>_digest.md
+         └─► R10 → Exposia_<domain>_presentation.csv   (last step: console summary)
 ```
 
-**Data thread.** D1 writes a working file `Exposia_<domain>.csv` in *exploded* format: one exposure, N attack narratives, N mitigation measures, i.e. one row per combination. D2 enriches it in place (idempotent: when rerun, it rebuilds the base rows before starting again). The R modules read it without ever modifying it. R10 re-aggregates it into a readable view: one row per exposure × CVE.
+**Data thread.** D1 writes a working file `Exposia_<domain>.csv` in *exploded* format: one exposure, N attack narratives, N mitigation measures, i.e. one row per combination. D2 enriches it in place (idempotent: when rerun, it rebuilds the base rows before starting again). The R modules read it without ever modifying it. R13 writes the canonical JSON with the same functions as the report parts; R12 condenses that JSON for an AI assistant; R10 re-aggregates the working file into a readable view (one row per exposure × CVE) and prints the run summary, as the last step.
+
+**Campaign folder.** The root of `Result/<campaign>/` only holds deliverables (PDF, presentation CSV, canonical JSON, digest). Everything else is in `data/`: working files, `run_summary.json`, caches, and `campaign.json`, which records the domain that owns the folder (so that `x.fr` never overwrites the campaign of `x.com`).
 
 **Tags, the semantic pivot.** Attack narratives (`Ports_to_attack.csv`, CVSS steps) and measures (`mitigation_measures.csv`) do not know about each other: they share *tags* (`acces_non_authentifie`, `vol_donnees_sensibles`…). A tag without a measure would leave a scenario without a response; an automated test checks that every tag in use has at least one measure.
 
-**Interactivity.** Only D3 asks questions (sector, size, region). The ASM rating comes from D1; D3 asks for it only if it is missing. `--skip-threat` skips the step.
+**Interactivity.** Only D3 needs input: the organization profile (sector, size, region), passed as `--secteur`, `--taille`, `--zone`; any value left out is asked for at the keyboard, and refused when there is no terminal. Accepted values are those of the matrices, listed by `--help`. The ASM rating is never entered: it comes from D1, and D3 stops if it is missing. `--skip-threat` skips the step.
 
 ## 3. Cross-cutting algorithms
 
@@ -67,8 +72,8 @@ Each row (an exposure, possibly with a CVE) receives a qualification of **Critic
 
 | Known service | CVE | Calculation |
 |---|---|---|
-| yes | yes | `base × service multiplier`, then exploit floor |
-| no | yes | `base` alone, then exploit floor |
+| yes | yes | `base × service multiplier`, then exploit, EPSS and KEV floors |
+| no | yes | `base` alone, then exploit, EPSS and KEV floors |
 | yes | no | service criticality alone: CRITIQUE or HAUTE → Medium; MOYENNE or FAIBLE → Low |
 | no | no | Low (score 0.1) |
 
@@ -86,7 +91,21 @@ base = 0.60 × EPSS + 0.25 × (CVSS / 10) + 0.15 × exp(−age / 8)
 
 **"Public exploit" floor.** A CVE for which at least one public exploit is referenced (ExploitDB or PoC-in-GitHub) is never qualified below a floor that depends on its severity: **High if CVSS ≥ 7, Medium otherwise** (an unknown CVSS counts as 0). The floor raises a qualification, never lowers it, and only applies to rows carrying a CVE.
 
-*Why this floor.* The existence of a public exploit is an observed fact, whereas EPSS is an estimate. Without this floor, an old, critical flaw that is exploitable off the shelf but has a low EPSS could end up as Low (for example CVSS 9.8, EPSS 0.02, a 2016 CVE on a HAUTE service: score 0.33). It then had only one narrative and no measure. The floor is conditioned on CVSS so that a minor flaw with a mere PoC is not raised to High (for example CVSS 4.2, EPSS 0.002, one referenced exploit). The rules are configurable (`EXPLOIT_FLOOR_RULES` in D1); an empty list disables the floor.
+*Why this floor.* The existence of a public exploit is an observed fact, whereas EPSS is an estimate. Without this floor, an old, critical flaw that is exploitable off the shelf but has a low EPSS could end up as Low (for example CVSS 9.8, EPSS 0.02, a 2016 CVE on a HAUTE service: score 0.33). It then had only one narrative and no measure. The floor is conditioned on CVSS so that a minor flaw with a mere PoC is not raised to High (for example CVSS 4.2, EPSS 0.002, one referenced exploit). The rules are configurable (`EXPLOIT_FLOOR_RULES` in `exposia_scoring.py`); an empty list disables the floor.
+
+**"EPSS" floor.** A CVE outside KEV whose EPSS exceeds **10%** is at least **High**. EPSS already weighs 60% of the formula: this floor only catches CVEs pulled down by CVSS or age while observed activity is real (on the test datasets, one CVE in thirty: EPSS 0.198, Medium → High).
+
+**"KEV" floor.** A CVE listed in CISA's Known Exploited Vulnerabilities catalog is an emergency: exploitation is observed, not estimated. It is **Critical**, except an isolated privilege escalation, which is **High**:
+
+| Condition (KEV CVE) | Floor |
+|---|---|
+| network or adjacent vector (`AV:N`, `AV:A`), or unknown vector | Critical |
+| changed scope (`S:C`): container or hypervisor escape, whatever the vector | Critical |
+| local or physical vector on a CRITIQUE service (administration, database…) | Critical |
+| local or physical vector, with a network-vector CVE exposed on the same host (IP): chaining | Critical |
+| other cases: local or physical vector, unchanged scope, non-critical service, no network entry point | High |
+
+*Why this nuance.* Exposia looks at the perimeter from the Internet: a privilege escalation needs initial access. It stays Critical as soon as that access is plausible (network CVE on the host), the machine is sensitive, or the flaw crosses a security boundary. Both floors raise a qualification, never lower it, and add to the exploit floor. KEV is an accelerator, **never a clean bill of health**: a CVE missing from the catalog is not deemed unexploited. Rules and thresholds: `Modules/exposia_scoring.py`.
 
 ### 3.2 Attack narrative: three steps, one cap
 
@@ -137,7 +156,7 @@ CVSS, EPSS, KEV and the Exposia rating are **reading grids**: each answers a dif
 | KEV (CISA) | exploitation observed in the wild | your system's exposure, or flaws not yet catalogued |
 | Exposia rating | a reading order for the perimeter | an actual risk level |
 
-The volume of published CVEs is growing, which makes filtering both more necessary and more fragile. Exposia therefore combines CVSS and EPSS (§3.1), raised by the "public exploit" floor, and **does not yet integrate KEV**. That is the most direct improvement: a binary "exploited" signal would raise an exposure on evidence rather than estimate, on the same model as the exploit floor. It would add a network call (§7) and change the qualification formula.
+The volume of published CVEs is growing, which makes filtering both more necessary and more fragile. Exposia therefore combines CVSS and EPSS (§3.1), raised by three floors: "public exploit", EPSS and **KEV**. The latter raises an exposure on evidence of exploitation rather than estimate; its absence does not mean absence of exploitation.
 
 ## 4. Data modules (D)
 
@@ -202,7 +221,7 @@ The `avg_composite_score` column of `mitigation_prioritization_enhanced.csv` kee
 
 | | |
 |---|---|
-| **Input** | sector, size, region (user input); ASM rating (D1); `Threat_matrices/M1..M7` matrices |
+| **Input** | sector, size, region (options or keyboard); ASM rating (D1); `Threat_matrices/M1..M7` matrices |
 | **Output** | `threat_analysis_*.csv`, one row per retained motivation, with `Score_Acteur` |
 
 Inspired by the EBIOS RM taxonomy: 8 risk sources (State-sponsored, Organized crime, Terrorist, Activist, Specialized outfit, Amateur, Avenger, Malicious/pathological), 6 motivations. For each actor:
@@ -224,19 +243,23 @@ Levels (read by R1): **Critical ≥ 300; High ≥ 120; Moderate ≥ 40; otherwis
 
 Every part of the report follows **the same structure**, so the reader can find their way: an "In plain terms" box (the essentials in three sentences), a short "Methodology", a matrix or table, then the detail. The executive summary is enough to make a decision; the parts provide the detail. All modules share the `R0_report_theme` theme: a style change is made in one place.
 
+**Language.** Every deliverable (PDF, CSV, JSON, digest) is produced in the language of the run, French by default, English with `--lang en`. Each module declares its fixed texts in both languages side by side. Reference texts (attack narratives, measures, indicators) are translated in a `<column>_EN` column next to the French one, in the same `Parameters/` files; the working file keeps the French text, replaced at rendering time by its translation. An already collected campaign can therefore be rendered in English without a new collection. Codes in the canonical JSON do not depend on the language; its texts and its `labels` table follow `run.lang`.
+
 | Module | Role | Methodological choice |
 |---|---|---|
 | **R5** cover | Organization, domain, date, overall criticality | Criticality comes from D1 (§3.3). |
 | **R7** foreword | "What this report says, and what it does not" | Fixed text: it describes the method and its limits, not the results. |
 | **R11** table of contents | Clickable table of contents | Page numbers are only known at assembly: R9 calls R11 after counting pages. |
 | **R6** executive summary | "From threat to mitigation": three actor → asset → vector → measure chains | See below. |
-| **R1** part 1, threats | Who attacks, and why | Ranks actors by `Score_Acteur` (D3), with their profile (number of motivations). |
+| **R1** part 1, threats | Who attacks, and why | Ranks actors by `Score_Acteur` (D3), with their profile (number of motivations). Ties are broken by the order of matrix M1 (state-sponsored, organized crime…), and an actor's motivations at equal score by the order of matrix M2; R6 applies the same rule. |
 | **R2** part 2, assets | What perimeter is exposed | Subdomains, services, categories; classification shown as "presumed nature". |
 | **R3** part 3, risks | What impacts | Top 10 assets: qualification, then the service's business impact (criticality from `services_list.csv`), then EPSS; typical scenarios; three scenarios shown per asset. Impact breaks ties between assets without CVEs (zero EPSS): at equal qualification, a critical administration service ranks ahead of a web application. |
 | **R4** part 4, mitigation | What to do in practice | Measures presented as awareness **good practices**: fixing a CVE means updating the software, and the report says so at the start of the part. |
 | **R8** back cover | Closing, confidentiality | Same background as the cover: the two form a pair. |
 | **R9** assembly | PDF merging, page numbering, bookmarks | Fixed order; cover and back cover excluded from numbering; source PDFs kept by default. |
 | **R10** presentation view | Readable CSV deliverable | One row per exposure × CVE: highest qualification in the group, deduplicated narratives, folded measures (count, IDs, maximum priority). |
+| **R12** AI digest | Markdown for an AI assistant | Reads the canonical JSON only: same figures, exposure order, scenarios and measure ranking as the report. Hierarchical (asset → service → CVE), deduplicated (each narrative and measure described once, then referenced), with the status of every piece of information and the qualification rule generated from `exposia_scoring`. External values are checked against a strict format before being written. |
+| **R13** canonical JSON | Results for other tools | `Exposia_<domain>_results.json`, computed by the same functions as the report parts (same figures and "In short" texts by construction). Stable codes instead of labels; catalogs of hosts, exposures (subdomain, port), scenarios, mitigations and actors referenced by ID; collection sources from D1. Format: `schema/results.schema.json` (JSON Schema). |
 
 **Report order:** cover, foreword, table of contents, executive summary, parts 1 to 4, back cover.
 
@@ -250,8 +273,12 @@ Every part of the report follows **the same structure**, so the reader can find 
 
 | File | Role |
 |---|---|
-| `run_pipeline.sh` | Orchestrator: chains the steps, options `--skip-*`, `--continue-on-error`, `--clean`. |
-| `exposia_paths.py` | Single directory tree, campaign name (registered domain, without public suffix). |
+| `run_pipeline.sh` | Orchestrator: chains the steps (D1 → D3, R5 → R9, then R13, R12, R10), options `--skip-*`, `--continue-on-error`, `--clean`, `--events`, `--lang`. |
+| `exposia_paths.py` | Single directory tree, campaign name (registered domain, without public suffix), owner marker `data/campaign.json`. |
+| `exposia_scoring.py` | Qualification weights, thresholds and floors (exploit, EPSS, KEV), actor levels: single source for D1, the report and the digest. |
+| `exposia_vocab.py` | Stable codes and FR / EN labels (severities, actors, categories…) for the report and the canonical JSON; category codes in `Parameters/service_categories.csv` and `mitigation_categories.csv`. |
+| `exposia_i18n.py` | Language of the deliverables (`EXPOSIA_LANG`, set by `--lang`): fixed texts, translation of reference texts through their `_EN` columns, number, percentage and date formats. |
+| `exposia_events.py` | Progress events (`--events`, JSON Lines in `data/events.jsonl`) for a tool that drives Exposia: steps, loop progress, snapshots of what each D1 phase found, source status (retries, errors). Inactive without the option; a write error never stops the run. Two families of figures with distinct names: raw collection counters (`count`, root domain and CDN edge IPs included) and, once CDN edges are set aside, the consolidated figures (`consolidated`), equal to those of the report and the canonical JSON. |
 | `exposia_config.py` | API keys: environment variables, otherwise `config.yaml`. Never as arguments. |
 | `exposia_ui.py` | Console display (colors, statuses, progress bars); disabled when output is redirected. |
 
@@ -271,6 +298,7 @@ All outbound traffic comes from `D1_asset_discovery_assessment.py`. A test (`tes
 | **EPSS (FIRST)** | `GET api.first.org/data/v1/epss?cve=<CVE>` | a CVE identifier | no | exploitation probability |
 | **PoC-in-GitHub** | `GET poc-in-github.motikan2010.net/api/v1/?cve_id=<CVE>` | a CVE identifier | no | public exploits |
 | **ExploitDB** | `GET` of the `files_exploits.csv` file (GitLab), once per run | nothing (download) | no | CVE → exploit mapping |
+| **KEV (CISA)** | `GET` of the `known_exploited_vulnerabilities.json` catalog (cisa.gov, then CISA's GitHub mirror), at most once a day | nothing (download) | no | actively exploited CVEs |
 
 Nothing else is sent: no report content, no organization name, no sector, no D3 answers. Keys are only sent to their own service, never as command-line arguments.
 
@@ -280,7 +308,7 @@ Nothing else is sent: no report content, no organization name, no sector, no D3 
 - **Third parties learn that you are interested in the domain**: crt.sh and Cert Spotter receive the domain name, Shodan the IPs, NVD, EPSS and PoC-in-GitHub the relevant CVEs. Testing a perimeter that is not yours therefore leaves traces with these services.
 - **Without a Shodan key**, the scan is skipped: the report contains subdomains and IPs, without CVEs. `--resolve-ips` limits the run to DNS resolution.
 - **Without an NVD key**, the analysis remains complete but slow: about 6 s per CVE (the service's public limit, 5 requests per 30 s) versus 0.7 s with a key. D1 displays a duration estimate.
-- **Local caches**: the subdomain list (`crtsh_cache_<domain>.json`) is kept in `Result/<campaign>/data/`; it avoids querying crt.sh on every run.
+- **Local caches**: the subdomain list (`crtsh_cache_<domain>.json`) and the KEV catalog (`kev_cache.json`, 24 h) are kept in `Result/<campaign>/data/`; they avoid querying crt.sh and CISA on every run. Offline, a stale KEV cache is used with a warning; with no cache at all, the KEV status stays unknown and the KEV floor is not applied.
 - **Identification**: NVD receives `User-Agent: CVE-Analyzer-Tool/1.0`; other JSON requests use a generic agent (`Mozilla/5.0`).
 
 ### 7.3 Terms of use
@@ -306,7 +334,7 @@ Exposia is designed for your own perimeter or for a perimeter for which you have
 - **CDN:** only CDNs listed in `cdn_ranges.csv` are recognized (Cloudflare provided). Another CDN (Akamai, Fastly, CloudFront…) still inflates the count until it is added, by range or by ASN. A genuine origin exposure on a CDN IP (rare) would be reduced to ports 80 and 443.
 - **Hard-coded "internal" criteria:** the keywords and ports that define a service presumed sensitive are in D1's code, unlike the rest of the reference data. Adapting them requires modifying D1 until they are moved into `services_list.csv`.
 - **Measure ranking:** the maximum raises a measure tied to a single severe exposure; coverage only breaks ties afterwards. A very generic measure stays high if it touches a critical exposure.
-- **No KEV:** confirmed exploitation does not enter the qualification; a flaw exploited in the wild with no referenced public exploit and a low EPSS may be under-ranked (§3.5).
+- **KEV:** CISA's catalog only lists exploitation it has documented; a missing CVE is not deemed safe. Chaining only looks at the same host: an entry point on a neighbouring host does not count. CVSS v2 has no scope: for older CVEs, only the vector applies.
 - **Exploit floor:** a referenced public exploit is not always functional (incomplete PoC, wrong version); the floor can therefore over-rank a CVE. Conditioning it on CVSS limits the effect to severe flaws. The CVSS used is the one reported by Shodan, which may differ from NVD's.
-- **Calibration:** weights (0.60 / 0.25 / 0.15), thresholds (0.35 / 0.55 / 0.75), exploit floor (High if CVSS ≥ 7, Medium otherwise) and matrices M1..M7 are design choices, open to empirical validation.
+- **Calibration:** weights (0.60 / 0.25 / 0.15), thresholds (0.35 / 0.55 / 0.75), exploit floor (High if CVSS ≥ 7, Medium otherwise), EPSS floor (10%), KEV floor and matrices M1..M7 are design choices, open to empirical validation.
 - **Decision aid:** the report is not an audit and does not replace a penetration test.
