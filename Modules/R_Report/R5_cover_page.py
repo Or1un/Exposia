@@ -31,14 +31,30 @@ from html import escape as esc  # échappement HTML de toute valeur injectée da
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import exposia_paths  # résolution centralisée des chemins
 from exposia_ui import Colors, ModernUI  # UI console centralisée
+import exposia_i18n as i18n  # langue des livrables (EXPOSIA_LANG)
+from exposia_i18n import tr
 
 
-# Niveau de criticité -> (label FR, couleur haute, couleur basse du dégradé du badge)
+# Niveau de criticité -> ((libellé FR, EN), couleur haute, couleur basse du dégradé du badge)
 RISK_STYLES = {
-    'low':      ('Faible',   '#7FB84E', '#6BA33E'),
-    'medium':   ('Moyen',    '#E0A94A', '#D0993A'),
-    'high':     ('Élevé',    '#F0973F', '#E8823C'),
-    'critical': ('Critique', '#E85761', '#D8434C'),
+    'low':      (('Faible', 'Low'),        '#7FB84E', '#6BA33E'),
+    'medium':   (('Moyen', 'Medium'),      '#E0A94A', '#D0993A'),
+    'high':     (('Élevé', 'High'),        '#F0973F', '#E8823C'),
+    'critical': (('Critique', 'Critical'), '#E85761', '#D8434C'),
+}
+
+# Textes de la couverture (FR, EN)
+T = {
+    'title_tag': ("Rapport d'analyse", "Analysis report"),
+    'baseline': ("Révéler ce qui vous expose", "Revealing what exposes you"),
+    'title': ("RAPPORT D'ANALYSE", "ANALYSIS REPORT"),
+    'subtitle': ("De la menace &agrave; l'action&nbsp;: comprendre votre exposition et prioriser les mesures.",
+                 "From threat to action: understand your exposure and prioritize your measures."),
+    'org': ("Organisation", "Organization"),
+    'domain': ("Domaine analysé", "Analyzed domain"),
+    'date': ("Date d'analyse", "Analysis date"),
+    'level': ("Niveau de criticité", "Criticality level"),
+    'footer': ("Confidentiel — Usage interne uniquement", "Confidential — Internal use only"),
 }
 
 _FONT_FACES = [
@@ -68,29 +84,19 @@ def _build_font_css(fonts_dir):
     return "\n".join(faces)
 
 
-def _french_date():
-    d = datetime.now().strftime('%d %B %Y')
-    months = {'January': 'janvier', 'February': 'février', 'March': 'mars',
-              'April': 'avril', 'May': 'mai', 'June': 'juin', 'July': 'juillet',
-              'August': 'août', 'September': 'septembre', 'October': 'octobre',
-              'November': 'novembre', 'December': 'décembre'}
-    for en, fr in months.items():
-        d = d.replace(en, fr)
-    return d.lstrip('0')
-
-
 def generate_cover_page(organization, domain, risk_level, output_file, fonts_dir):
     """Génère la page de garde PDF."""
     organization, domain = esc(str(organization)), esc(str(domain))  # valeurs injectées dans le HTML
-    risk_label, badge_hi, badge_lo = RISK_STYLES.get(str(risk_level).lower(), RISK_STYLES['critical'])
-    current_date = _french_date()
+    risk_labels, badge_hi, badge_lo = RISK_STYLES.get(str(risk_level).lower(), RISK_STYLES['critical'])
+    risk_label = i18n.pick(*risk_labels)
+    current_date = i18n.long_date(datetime.now())
     font_css = _build_font_css(fonts_dir)
 
     html_content = f'''<!DOCTYPE html>
-<html lang="fr">
+<html lang="{i18n.lang()}">
 <head>
 <meta charset="UTF-8">
-<title>Rapport d'analyse — {organization.capitalize()}</title>
+<title>{tr(T, 'title_tag')} — {organization.capitalize()}</title>
 <style>
 {font_css}
 @page {{ size: A4; margin: 0; }}
@@ -147,24 +153,24 @@ html, body {{ margin: 0; padding: 0; }}
 
     <div class="brand">
       <div class="wordmark">E<span class="x">x</span>posia</div>
-      <div class="baseline">Révéler ce qui vous expose</div>
+      <div class="baseline">{tr(T, 'baseline')}</div>
     </div>
 
     <div class="hero">
-      <div class="title">RAPPORT D'ANALYSE</div>
-      <div class="subtitle">De la menace &agrave; l'action&nbsp;: comprendre votre exposition et prioriser les mesures.</div>
+      <div class="title">{tr(T, 'title')}</div>
+      <div class="subtitle">{tr(T, 'subtitle')}</div>
       <div class="signature">Threat<span class="sep">—</span>Assets<span class="sep">—</span>Risks<span class="sep">—</span>Mitigations</div>
     </div>
 
     <div class="info">
-      <div class="row"><span class="label">Organisation</span><span class="value">{organization.capitalize()}</span></div>
-      <div class="row"><span class="label">Domaine analysé</span><span class="value">{domain}</span></div>
-      <div class="row"><span class="label">Date d'analyse</span><span class="value">{current_date}</span></div>
-      <div class="row"><span class="label">Niveau de criticité</span><span class="value"><span class="badge">{risk_label}</span></span></div>
+      <div class="row"><span class="label">{tr(T, 'org')}</span><span class="value">{organization.capitalize()}</span></div>
+      <div class="row"><span class="label">{tr(T, 'domain')}</span><span class="value">{domain}</span></div>
+      <div class="row"><span class="label">{tr(T, 'date')}</span><span class="value">{current_date}</span></div>
+      <div class="row"><span class="label">{tr(T, 'level')}</span><span class="value"><span class="badge">{risk_label}</span></span></div>
     </div>
 
     <div class="footer">
-      <div class="txt">Confidentiel — Usage interne uniquement</div>
+      <div class="txt">{tr(T, 'footer')}</div>
     </div>
   </div>
 </body>
