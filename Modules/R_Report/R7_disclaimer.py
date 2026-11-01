@@ -22,6 +22,8 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import exposia_paths  # résolution centralisée des chemins
 from exposia_ui import ModernUI  # UI console centralisée
+import exposia_i18n as i18n  # langue des livrables (EXPOSIA_LANG)
+from exposia_i18n import tr
 try:  # thème partagé (report_theme.py ou R0_report_theme.py)
     import report_theme
 except ImportError:
@@ -48,40 +50,56 @@ DISCLAIMER_CSS = """
 """
 
 
+# Textes de l'avant-propos (FR, EN)
+T = {
+    'kicker': ('Avant-propos', 'Foreword'),
+    'title': ("Ce que ce rapport dit &mdash; et ce qu'il ne dit pas", "What this report says &mdash; and what it doesn't"),
+    'is': ("Ce qu'il est", 'What it is'),
+    'is_not': ("Ce qu'il n'est pas", 'What it is not'),
+    'lead1': ("Ce rapport d&eacute;crit votre exposition <b>depuis Internet</b>, du point de vue d'un attaquant externe&nbsp;: <b>sans acc&egrave;s privil&eacute;gi&eacute;, sans jamais toucher &agrave; vos syst&egrave;mes</b>. Chaque constat repose sur des sources publiques et reconnues&nbsp;: certificats publi&eacute;s, DNS, Shodan, base de vuln&eacute;rabilit&eacute;s du NIST (NVD), probabilit&eacute;s d'exploitation (EPSS) et r&eacute;f&eacute;rentiels d'exploits publics.",
+              'This report describes your exposure <b>from the Internet</b>, from the point of view of an external attacker: <b>with no privileged access, and without ever touching your systems</b>. Every finding relies on public, recognised sources: published certificates, DNS, Shodan, the NIST vulnerability database (NVD), exploitation probabilities (EPSS) and public exploit repositories.'),
+    'is_p': ("Une photographie, &agrave; date, de votre surface d'attaque externe, hi&eacute;rarchis&eacute;e selon la gravit&eacute; technique, la probabilit&eacute; d'exploitation et l'impact m&eacute;tier. Un outil de d&eacute;cision&nbsp;: il indique o&ugrave; agir en premier.",
+              'A point-in-time snapshot of your external attack surface, prioritised by technical severity, likelihood of exploitation and business impact. A decision-making tool: it shows where to act first.'),
+    'not_p': ("Un test d'intrusion. Aucune vuln&eacute;rabilit&eacute; n'a &eacute;t&eacute; exploit&eacute;e&nbsp;: la plupart sont d&eacute;duites des versions logicielles annonc&eacute;es par les services expos&eacute;s. Un correctif d&eacute;j&agrave; appliqu&eacute; peut ne pas &ecirc;tre d&eacute;tect&eacute; si la version annonc&eacute;e n'a pas chang&eacute;. Les actifs non publi&eacute;s et votre r&eacute;seau interne sont hors champ. Les sc&eacute;narios d'attaque sont repr&eacute;sentatifs, et la sensibilit&eacute; d'un service est pr&eacute;sum&eacute;e d'apr&egrave;s sa nature.",
+              'A penetration test. No vulnerability was exploited: most are inferred from the software versions advertised by the exposed services. A patch that has already been applied may go undetected if the advertised version has not changed. Unpublished assets and your internal network are out of scope. The attack scenarios are representative, and the sensitivity of a service is presumed from its nature.'),
+    'lead2': ('Chaque constat est rattach&eacute; &agrave; sa source et doit &ecirc;tre v&eacute;rifi&eacute; par vos &eacute;quipes avant toute intervention. Les informations pr&eacute;sent&eacute;es sont accessibles publiquement. Leur regroupement permet de mieux comprendre votre exposition et de prioriser les actions.',
+              'Each finding is linked to its source and should be verified by your teams before any action is taken. The information presented is publicly accessible. Bringing it together gives a better understanding of your exposure and helps prioritise actions.'),
+}
+
+
 def build_html(org_disp):
     """Contenu HTML de l'avant-propos (texte fixe, validé)."""
     return f"""<!DOCTYPE html>
-<html lang="fr">
-<head><meta charset="UTF-8"><title>Avant-propos</title></head>
+<html lang="{i18n.lang()}">
+<head><meta charset="UTF-8"><title>{tr(T, 'kicker')}</title></head>
 <body>
-  <div class="rh-brand">E<span class="x">x</span>posia</div>
-  <div class="rh-doc">Rapport d'analyse &middot; {org_disp}</div>
+  {report_theme.doc_header(org_disp)}
 
-  <div class="kicker">Avant-propos</div>
-  <div class="part-title">Ce que ce rapport dit &mdash; et ce qu'il ne dit pas</div>
+  <div class="kicker">{tr(T, 'kicker')}</div>
+  <div class="part-title">{tr(T, 'title')}</div>
   <div class="rule"></div>
 
-  <p class="lead">Ce rapport d&eacute;crit votre exposition <b>depuis Internet</b>, du point de vue d'un attaquant externe&nbsp;: <b>sans acc&egrave;s privil&eacute;gi&eacute;, sans jamais toucher &agrave; vos syst&egrave;mes</b>. Chaque constat repose sur des sources publiques et reconnues&nbsp;: certificats publi&eacute;s, DNS, Shodan, base de vuln&eacute;rabilit&eacute;s du NIST (NVD), probabilit&eacute;s d'exploitation (EPSS) et r&eacute;f&eacute;rentiels d'exploits publics.</p>
+  <p class="lead">{tr(T, 'lead1')}</p>
 
   <table class="scope">
     <tr>
       <td class="is">
         <div class="box">
-          <div class="lab">Ce qu'il est</div>
-          <p>Une photographie, &agrave; date, de votre surface d'attaque externe, hi&eacute;rarchis&eacute;e selon la gravit&eacute; technique, la probabilit&eacute; d'exploitation et l'impact m&eacute;tier. Un outil de d&eacute;cision&nbsp;: il indique o&ugrave; agir en premier.</p>
+          <div class="lab">{tr(T, 'is')}</div>
+          <p>{tr(T, 'is_p')}</p>
         </div>
       </td>
       <td class="gap"></td>
       <td>
         <div class="box not">
-          <div class="lab">Ce qu'il n'est pas</div>
-          <p>Un test d'intrusion. Aucune vuln&eacute;rabilit&eacute; n'a &eacute;t&eacute; exploit&eacute;e&nbsp;: la plupart sont d&eacute;duites des versions logicielles annonc&eacute;es par les services expos&eacute;s. Un correctif d&eacute;j&agrave; appliqu&eacute; peut ne pas &ecirc;tre d&eacute;tect&eacute; si la version annonc&eacute;e n'a pas chang&eacute;. Les actifs non publi&eacute;s et votre r&eacute;seau interne sont hors champ. Les sc&eacute;narios d'attaque sont repr&eacute;sentatifs, et la sensibilit&eacute; d'un service est pr&eacute;sum&eacute;e d'apr&egrave;s sa nature.</p>
+          <div class="lab">{tr(T, 'is_not')}</div>
+          <p>{tr(T, 'not_p')}</p>
         </div>
       </td>
     </tr>
   </table>
 
-  <p class="lead">Chaque constat est rattach&eacute; &agrave; sa source et doit &ecirc;tre v&eacute;rifi&eacute; par vos &eacute;quipes avant toute intervention. Les informations pr&eacute;sent&eacute;es sont accessibles publiquement. Leur regroupement permet de mieux comprendre votre exposition et de prioriser les actions.</p>
+  <p class="lead">{tr(T, 'lead2')}</p>
   </div>
 </body>
 </html>"""
