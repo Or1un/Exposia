@@ -21,6 +21,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import exposia_paths  # résolution centralisée des chemins
 from exposia_ui import ModernUI  # UI console centralisée
+import exposia_i18n as i18n  # langue des livrables (EXPOSIA_LANG)
 
 from weasyprint import HTML
 
@@ -97,7 +98,7 @@ def generate_back_cover(output_file, fonts_dir):
     <div class="hero">
       <div class="wordmark">E<span class="x">x</span>posia</div>
       <div class="rule"></div>
-      <div class="statement">Votre exposition &eacute;volue chaque jour.<br><em>Votre visibilit&eacute; aussi devrait.</em></div>
+      <div class="statement">{i18n.pick("Votre exposition &eacute;volue chaque jour.<br><em>Votre visibilit&eacute; aussi devrait.</em>", "Your exposure changes every day.<br><em>So should your visibility.</em>")}</div>
     </div>
 
     <div class="footer"></div>
