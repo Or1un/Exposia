@@ -16,11 +16,13 @@ Exposia is meant for security awareness and decision support. It is neither a pe
 
 For each domain, a `Result/<name>/` folder (`<name>` is the registered domain without its suffix, e.g. `example` for `example.com`) with:
 
-- `Rapport_Final_*.pdf`: cover, summary, threat profiles, assets, risks, mitigation plan;
+- `Rapport_Final_*.pdf` (`Final_Report_*.pdf` in English): cover, summary, threat profiles, assets, risks, mitigation plan;
 - `Exposia_*_presentation.csv`: one row per exposure × CVE, ready for a spreadsheet;
+- `Exposia_*_results.json`: canonical results for other tools: summary figures, the report's "In short" texts, chart data and catalogs of hosts, exposures, scenarios, mitigations and actors, with stable codes instead of labels ([schema](schema/results.schema.json));
+- `Exposia_*_digest.md`: the same analysis condensed for an AI assistant (Markdown, about three times smaller than the CSV);
 - `data/`: intermediate CSV and PDF files, kept for inspection.
 
-The report and CSV are generated **in French**. The pipeline is documented in [Methodology.md](Methodology/Methodology.md), available in English and French.
+Deliverables (report, CSV, JSON, digest) are generated in French by default, in English with `--lang en`; console messages stay in French. The pipeline is documented in [Methodology.md](Methodology/Methodology.md), available in English and French.
 
 ### Example output
 
@@ -70,11 +72,14 @@ Set `api_keys.shodan` and `api_keys.nvd`, or use the `SHODAN_API_KEY` and `NVD_A
 
 | Option | Effect |
 |---|---|
-| `--skip-threat` | Skip threat modeling (the only interactive step) |
+| `--lang fr\|en` | Language of the deliverables (default: `fr`). An existing campaign can be rendered in the other language without a new collection: `--skip-discovery --skip-mitigation --skip-threat --lang en` |
+| `--secteur`, `--taille`, `--zone` | Organization profile for threat modeling, so the run asks nothing (values: `./run_pipeline.sh --help`, English labels accepted too: `Healthcare`, `SME`, `Western_Europe`); any value left out is asked for |
+| `--skip-threat` | Skip threat modeling |
 | `--skip-discovery --skip-mitigation` | Regenerate the report from existing data |
 | `--resolve-ips` | Resolve IPs without a vulnerability scan |
 | `--clean` | Remove intermediate PDFs |
 | `--continue-on-error` | Keep going if a stage fails |
+| `--events` | Write progress events (JSON Lines) to `Result/<name>/data/events.jsonl` for a tool that drives Exposia: steps, loop progress, raw and consolidated counters, per-phase snapshots, source status; format in `Modules/exposia_events.py` |
 
 `./run_pipeline.sh --help` lists every option.
 
@@ -83,7 +88,7 @@ Set `api_keys.shodan` and `api_keys.nvd`, or use the `SHODAN_API_KEY` and `NVD_A
 1. **D1**: discover subdomains and IPs, then services and CVEs; compute exposure and domain-level scores.
 2. **D2**: associate each finding with mitigation measures and rank them.
 3. **D3**: model relevant threat profiles from contextual inputs and matrices.
-4. **R modules**: generate and assemble the PDF report and the CSV export.
+4. **R modules**: generate and assemble the PDF report, the CSV export and the canonical JSON, computed by the same functions as the report.
 
 Modules exchange CSV and JSON files, so each stage can be inspected and rerun on its own. **Only D1 accesses external services**; the later stages work on the collected data, and a test enforces this.
 
@@ -110,9 +115,9 @@ Exposia queries these services at run time, with your own keys. No third-party d
 - **Incomplete visibility**: passive sources can be incomplete, outdated, or distorted by CDNs.
 - **Heuristics**: internal/external classification and threat profiles rest on configurable rules and expert judgment.
 - **Unvalidated scoring**: weights and thresholds are open to empirical calibration.
-- **No KEV signal yet**: the CISA Known Exploited Vulnerabilities catalog is not part of the qualification.
+- **KEV is an accelerator, not a clearance**: a CVE in CISA's Known Exploited Vulnerabilities catalog is raised to Critical (High for an isolated local privilege escalation), but a CVE missing from it is not deemed unexploited.
 - **No substitute for a professional assessment**: Exposia cannot show that a system is secure.
 
 ## Contributing
 
-Issues and pull requests are welcome, especially new services or attack paths in `Parameters/`.
+Issues and pull requests are welcome, especially new services or attack paths in `Parameters/`. A new service or mitigation category also needs its code in `Parameters/service_categories.csv` or `Parameters/mitigation_categories.csv`.
