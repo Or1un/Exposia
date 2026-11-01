@@ -14,12 +14,14 @@ Arborescence :
     ├── Modules/
     │   ├── exposia_paths.py            <- ce fichier
     │   ├── D_Data/                     D1, D2, D3  (production de données)
-    │   └── R_Report/                   R0..R10     (génération du rapport)
+    │   └── R_Report/                   R0..R13     (rapport et exports)
     └── Result/
         └── <campagne>/                 ex. exemple/
-            ├── campaign.json           domaine analysé (propriétaire du dossier)
-            ├── data/                   CSV + PDF intermédiaires
-            └── Rapport_Final_*.pdf     le livrable
+            ├── data/                   fichiers internes : CSV + PDF intermédiaires,
+            │                           run_summary.json, caches, campaign.json
+            │                           (domaine propriétaire du dossier)
+            └── livrables               Rapport_Final_*.pdf, Exposia_*_presentation.csv,
+                                        Exposia_*_results.json, Exposia_*_digest.md
 
 Nom de campagne : nom du domaine enregistré, sans suffixe public
 (www.exemple.com -> exemple, shop.exemple.co.uk -> exemple). Si ce nom
@@ -42,7 +44,7 @@ __all__ = [
     "latest_domain_dir", "resolve_data_dir",
 ]
 
-CAMPAIGN_MARKER = "campaign.json"
+CAMPAIGN_MARKER = "campaign.json"   # dans data/ (à la racine de la campagne avant novembre 2026)
 
 # Suffixes publics à deux niveaux les plus courants : repli utilisé uniquement si
 # la bibliothèque tldextract (liste publique complète, embarquée, hors ligne)
@@ -155,18 +157,45 @@ def _safe_name(value):
     return re.sub(r"[^\w-]+", "_", value, flags=re.UNICODE).strip("_") or "campagne"
 
 
+def _marker_paths(campaign_path):
+    """(emplacement actuel, ancien emplacement) du marqueur de propriété."""
+    return (os.path.join(campaign_path, "data", CAMPAIGN_MARKER),
+            os.path.join(campaign_path, CAMPAIGN_MARKER))
+
+
+def _migrate_marker(campaign_path):
+    """
+    Déplace un marqueur resté à la racine de la campagne (ancien emplacement)
+    dans data/ ; s'il existe déjà dans data/, l'ancien est supprimé. Idempotent.
+    Retourne l'emplacement actuel du marqueur.
+    """
+    marker, legacy = _marker_paths(campaign_path)
+    if os.path.exists(legacy):
+        try:
+            os.makedirs(os.path.dirname(marker), exist_ok=True)
+            if os.path.exists(marker):
+                os.remove(legacy)
+            else:
+                os.replace(legacy, marker)
+        except OSError:
+            pass
+    return marker
+
+
 def _campaign_owner(campaign_path):
     """
-    Domaine propriétaire d'un dossier de campagne : campaign.json, sinon (dossier
+    Domaine propriétaire d'un dossier de campagne : data/campaign.json, puis
+    campaign.json à la racine (emplacement d'avant novembre 2026), sinon (dossier
     créé avant ce marqueur) colonne Domain du fichier Exposia_*.csv ; None si inconnu.
     """
-    try:
-        with open(os.path.join(campaign_path, CAMPAIGN_MARKER), encoding="utf-8") as f:
-            owner = json.load(f).get("domain")
-        if owner:
-            return _registered_domain(owner)
-    except (OSError, ValueError):
-        pass
+    for marker in _marker_paths(campaign_path):
+        try:
+            with open(marker, encoding="utf-8") as f:
+                owner = json.load(f).get("domain")
+            if owner:
+                return _registered_domain(owner)
+        except (OSError, ValueError, AttributeError):
+            continue
     for path in glob.glob(os.path.join(campaign_path, "data", "Exposia_*.csv")):
         try:
             with open(path, encoding="utf-8-sig", newline="") as f:
@@ -208,18 +237,19 @@ def main_domain(domain):
 def domain_dir(domain, create=True):
     """
     Result/<campagne>/ — dossier de campagne (contient le livrable PDF).
-    À la création, enregistre le domaine propriétaire dans campaign.json.
+    À la création, enregistre le domaine propriétaire dans data/campaign.json ;
+    un marqueur resté à la racine (ancien emplacement) y est déplacé.
     """
     path = os.path.join(results_root(), main_domain(domain))
     if create:
-        os.makedirs(path, exist_ok=True)
-        marker = os.path.join(path, CAMPAIGN_MARKER)
-        if not os.path.exists(marker):
-            try:
+        os.makedirs(os.path.join(path, "data"), exist_ok=True)
+        marker = _migrate_marker(path)
+        try:
+            if not os.path.exists(marker):
                 with open(marker, "w", encoding="utf-8") as f:
                     json.dump({"domain": _registered_domain(domain)}, f, ensure_ascii=False)
-            except OSError:
-                pass
+        except OSError:
+            pass
     return path
 
 
@@ -256,6 +286,7 @@ def resolve_data_dir(result_dir=None, domain=None):
     if result_dir:
         path = os.path.join(os.path.abspath(result_dir), "data")
         os.makedirs(path, exist_ok=True)
+        _migrate_marker(os.path.dirname(path))
         return path
 
     if domain:
@@ -265,6 +296,7 @@ def resolve_data_dir(result_dir=None, domain=None):
     if latest:
         path = os.path.join(latest, "data")
         os.makedirs(path, exist_ok=True)
+        _migrate_marker(latest)
         return path
 
     raise FileNotFoundError(
