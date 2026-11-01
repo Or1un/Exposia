@@ -12,10 +12,13 @@ alors sur l'ancien calcul (motivation × ressources × probabilité).
 """
 
 import csv
+import re
 from html import escape as esc  # échappement HTML de toute valeur injectée dans un rapport
 import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 import exposia_paths  # résolution centralisée des chemins
+import exposia_scoring as scoring  # seuils de niveau d'acteur (partagés avec le digest R12)
+import exposia_vocab as vocab  # codes stables (JSON canonique)
 import exposia_ui  # UI console centralisée (Colors, ModernUI)
 from exposia_ui import Colors, ModernUI
 try:  # le thème peut être nommé report_theme.py ou R0_report_theme.py
@@ -26,8 +29,6 @@ import os
 import glob
 from datetime import datetime
 from collections import defaultdict, Counter
-from weasyprint import HTML, CSS
-from weasyprint.text.fonts import FontConfiguration
 
 # Libellés des matrices M2 / M3 / M4 (anglais) -> français affiché dans le rapport.
 FR_MOTIVATION = {"High": "élevé", "Quite": "modéré", "Poor": "faible", "Very low": "très faible"}
@@ -35,6 +36,75 @@ FR_RESOURCES = {"Unlimited": "illimitées", "Important": "importantes",
                 "Significant": "significatives", "Limited": "limitées"}
 FR_RELEVANCE = {"Very relevant": "très élevée", "Quite relevant": "modérée",
                 "Moderately relevant": "limitée", "Not really relevant": "faible"}
+
+
+import exposia_i18n as i18n  # langue des livrables (EXPOSIA_LANG)
+from exposia_i18n import tr
+
+# Textes fixes de la partie 1 (FR, EN)
+T = {
+    'title_tag': ("Rapport Threat Modeling", "Threat Modeling report"),
+    'kicker': ("Partie 1 &middot; Menaces", "Part 1 &middot; Threats"),
+    'title': ("Qui vous attaque, et pourquoi&nbsp;?", "Who is targeting you, and why?"),
+    'method': ("Notre approche du <b>threat modeling</b> croise le profil de votre organisation &mdash; <b>secteur, taille, zone g&eacute;ographique et niveau d'exposition</b> &mdash; avec les caract&eacute;ristiques de <b>huit types d'acteurs malveillants</b>. Nous analysons leurs motivations &mdash; <b>espionnage, profit, sabotage, influence</b> &mdash; pour compl&eacute;ter l'analyse des menaces en tenant compte de votre profil, puis nous pond&eacute;rons chaque acteur selon ces m&ecirc;mes crit&egrave;res afin de le <b>hi&eacute;rarchiser par un filtrage probabiliste</b>. En clair&nbsp;: nous identifions <b>qui peut vous attaquer, pourquoi et avec quel niveau de pertinence au regard de votre profil</b>.",
+               "Our <b>threat modeling</b> approach cross-references your organization's profile &mdash; <b>sector, size, geographic zone and exposure level</b> &mdash; with the characteristics of <b>eight types of malicious actors</b>. We analyse their motivations &mdash; <b>espionage, profit, sabotage, influence</b> &mdash; to complete the threat analysis in light of your profile, then weight each actor against these same criteria in order to <b>rank them through probabilistic filtering</b>. In short: we identify <b>who may attack you, why, and how relevant each threat is to your profile</b>."),
+    'matrix': ("Matrice de priorisation des menaces", "Threat prioritization matrix"),
+    'th': ("<th>Rang</th><th>Acteur</th><th>Motivation principale</th><th>Profil</th><th class=\"center\">Niveau</th>",
+           "<th>Rank</th><th>Actor</th><th>Primary motivation</th><th>Profile</th><th class=\"center\">Level</th>"),
+    'profiles': ("Profils d'attaquants d&eacute;taill&eacute;s", "Detailed attacker profiles"),
+    'profile': ("Profil&nbsp;: {p} &bull; {n} {mot}", "Profile: {p} &bull; {n} {mot}"),
+    'meta': ("<b>Sophistication</b>&nbsp;: {s} &nbsp;&bull;&nbsp; <b>Ressources</b>&nbsp;: {r} &nbsp;&bull;&nbsp; <b>Probabilit&eacute;</b>&nbsp;: {p}",
+             "<b>Sophistication</b>: {s} &nbsp;&bull;&nbsp; <b>Resources</b>: {r} &nbsp;&bull;&nbsp; <b>Probability</b>: {p}"),
+    'typology': ("Typologie", "Typology"),
+    'motivations': ("Motivations identifi&eacute;es", "Identified motivations"),
+    'mot_line': ("Niveau {l} &times; Ressources {r} &times; Pertinence {p}", "Level {l} &times; Resources {r} &times; Relevance {p}"),
+    'no_desc': ("Description non disponible.", "Description not available."),
+}
+LEVEL_TEXT = {'critical': ('CRITIQUE', 'CRITICAL'), 'high': ('ÉLEVÉ', 'HIGH'),
+              'medium': ('MODÉRÉ', 'MODERATE'), 'low': ('FAIBLE', 'LOW')}
+
+# Typologies des acteurs en anglais (clé : nom français de l'acteur, comme actor_descriptions)
+ACTOR_DESCRIPTIONS_EN = {
+    'Étatique': """These groups have <strong>unlimited resources and cutting-edge expertise</strong>.
+            They operate over the long term with strategic objectives:
+            <strong>economic espionage</strong>, <strong>political influence</strong>,
+            <strong>geopolitical positioning</strong>, or <strong>sabotage of critical infrastructure</strong>.
+            Their approach favours <strong>stealth</strong> and <strong>persistence</strong> to avoid detection.""",
+    'Crime organisé': """Driven by <strong>financial profit</strong>, these groups operate like criminal businesses,
+            with structured business models (ransomware-as-a-service, banking fraud, data theft).
+            They often target <strong>small and medium-sized businesses</strong> because of their greater vulnerability.
+            Their attacks are generally <strong>opportunistic</strong> but well organised.""",
+    'Terroriste': """They use cyberspace to complement their physical actions:
+            <strong>propaganda</strong>, <strong>recruitment</strong>, <strong>symbolic sabotage</strong>,
+            or <strong>psychological attacks</strong> (e.g. website defacement).
+            Their technical sophistication varies, but their media impact is often disproportionate.""",
+    'Activiste': """Driven by <strong>ideological convictions</strong> (political, social, environmental),
+            they aim to <strong>damage the image</strong> of their targets through visible actions:
+            <strong>data leaks</strong>, <strong>defacements</strong>, or <strong>DDoS</strong>.
+            Their attacks are rarely destructive but can have a <strong>major reputational impact</strong>.""",
+    'Officine': """Mercenary companies or parallel intelligence services, they operate in a <strong>legal grey area</strong>.
+            Their missions include <strong>industrial espionage</strong>, <strong>intelligence gathering</strong>,
+            or <strong>circumventing regulations</strong> on behalf of third-party clients (states, companies).
+            Their sophistication is high, with techniques close to those of APTs.""",
+    'Amateur': """Inexperienced actors using <strong>public tools</strong> (e.g. Metasploit, automated SQLi).
+            Their motivations are often <strong>personal challenge</strong> or <strong>vandalism</strong>,
+            but they can unintentionally cause <strong>significant damage</strong>
+            by exploiting known vulnerabilities.""",
+    'Vengeur': """Disgruntled employees, contractors or former staff. Their <strong>inside knowledge</strong>
+            of systems makes them particularly dangerous: <strong>data theft</strong>,
+            <strong>sabotage</strong>, or <strong>strategic leaks</strong>.
+            Their attacks are hard to detect in advance because of their <strong>apparent legitimacy</strong>.""",
+    'Malveillant': """Driven by <strong>technical recognition</strong> or <strong>intellectual challenge</strong>,
+            they exploit vulnerabilities to prove their skills (e.g. taking part in underground CTFs).
+            Although their actions do not always seek direct gain, they can serve as an
+            <strong>entry point</strong> for more serious attacks.""",
+}
+
+
+def _cap(text):
+    """Première lettre en majuscule (libellés anglais en tête de champ)."""
+    text = str(text)
+    return text[:1].upper() + text[1:]
 
 
 def _fr(table, value):
@@ -59,11 +129,7 @@ class ThreatReportPDFGenerator:
             # ASM, 7 424 couples acteur/profil) : CRITIQUE ≈ 13 % les plus élevés,
             # ÉLEVÉ ≈ 20 % suivants, MODÉRÉ ≈ 30 % suivants. À recalibrer si les
             # matrices M1..M7 évoluent sensiblement.
-            'score_thresholds': {
-                'critical': 300,
-                'high': 120,
-                'medium': 40
-            },
+            'score_thresholds': dict(scoring.ACTOR_SCORE_THRESHOLDS),
             'actor_icons': {
                 'Étatique': '🏛️',
                 'Crime organisé': '💰',
@@ -283,7 +349,9 @@ class ThreatReportPDFGenerator:
         aggregated_actors = []
         for actor, motivations in actor_groups.items():
             max_score = max(m['individual_score'] for m in motivations)
-            sorted_motivations = sorted(motivations, key=lambda x: x['individual_score'], reverse=True)
+            # À score égal, ordre de la matrice M2 (règle documentée, identique dans R6).
+            sorted_motivations = sorted(motivations, key=lambda x: (-x['individual_score'],
+                                                                    vocab.rank('motivation', x['motivation'])))
 
             motivation_count = len(motivations)
             if motivation_count >= 4:
@@ -314,7 +382,8 @@ class ThreatReportPDFGenerator:
                 'threat_profile': threat_profile
             })
 
-        prioritized_actors = sorted(aggregated_actors, key=lambda x: x['rank_score'], reverse=True)
+        # À score égal, ordre de la matrice M1 (Étatique, Crime organisé…), identique dans R6.
+        prioritized_actors = sorted(aggregated_actors, key=lambda x: (-x['rank_score'], vocab.rank('actor', x['actor'])))
 
 
         return {
@@ -334,11 +403,12 @@ class ThreatReportPDFGenerator:
         top_motivation, top_count = motivation_counts.most_common(1)[0]
         top_motivation_percent = round((top_count / len(all_motivations)) * 100)
 
-        critical_names = [a['actor'] for a in critical_actors]
+        critical_names = [i18n.label('actor', a['actor']) for a in critical_actors]
+        and_ = i18n.pick(" et ", " and ")
         if len(critical_names) > 2:
-            critical_list = ', '.join(critical_names[:-1]) + f" et {critical_names[-1]}"
+            critical_list = ', '.join(critical_names[:-1]) + f"{and_}{critical_names[-1]}"
         elif len(critical_names) == 2:
-            critical_list = f"{critical_names[0]} et {critical_names[1]}"
+            critical_list = f"{critical_names[0]}{and_}{critical_names[1]}"
         elif len(critical_names) == 1:
             critical_list = critical_names[0]
         else:
@@ -358,13 +428,26 @@ class ThreatReportPDFGenerator:
         """Détermine le niveau de criticité d'un score selon les seuils fournis."""
         thresholds = thresholds or self.config['thresholds']
         if score >= thresholds['critical']:
-            return 'critical', 'CRITIQUE'
+            level = 'critical'
         elif score >= thresholds['high']:
-            return 'high', 'ÉLEVÉ'
+            level = 'high'
         elif score >= thresholds['medium']:
-            return 'medium', 'MODÉRÉ'
+            level = 'medium'
         else:
-            return 'low', 'FAIBLE'
+            level = 'low'
+        return level, i18n.pick(*LEVEL_TEXT[level])
+
+    @staticmethod
+    def _motivation_line(m):
+        """« Niveau … × Ressources … × Pertinence … » d'une motivation (libellés de matrice)."""
+        if i18n.is_en():
+            vals = [vocab.label(v, vocab.code(v, m[k]), 'en', fallback=str(m[k]))
+                    for v, k in (('motivation_level', 'motivation_level'), ('resources_level', 'resources'),
+                                 ('relevance', 'probability'))]
+        else:
+            vals = [_fr(FR_MOTIVATION, m['motivation_level']), _fr(FR_RESOURCES, m['resources']),
+                    _fr(FR_RELEVANCE, m['probability'])]
+        return tr(T, 'mot_line', **{k: esc(str(v)) for k, v in zip('lrp', vals)})
 
     def get_pdf_css(self):
         """CSS = système Exposia partagé + spécifique aux cartes d'acteurs détaillées."""
@@ -394,10 +477,102 @@ class ThreatReportPDFGenerator:
         .mot-item .d { font-size:8.5pt; color:#8A90AC; margin-top:.8mm; }
 """
 
+    # ------------------------------------------------------------------
+    # Données de la partie (source unique du PDF et du JSON canonique)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def build_in_short(summary):
+        """Encadré « En clair » de la partie Menaces (segments)."""
+        seg = report_theme.seg
+        crit = summary['critical_count']
+        if i18n.is_en():
+            pl = i18n.plural
+            n = summary['total_actors']
+            p = [seg("The analysis identified "), seg(f"{n} attacker {pl(n, 'profile')}", True),
+                 seg(" likely to target your organization. ")]
+            if crit:
+                p += [seg("Among them, "), seg(f"{crit} {pl(crit, 'actor')} rated critical", True),
+                      seg(f" ({summary['critical_list']}) {'deserves' if crit == 1 else 'deserve'} particular attention.")]
+            else:
+                p += [seg("None reaches the critical level given your profile; the most relevant is "),
+                      seg(i18n.label('actor', summary['top_actor']), True), seg(".")]
+            p += [seg(" The most common motivation is "),
+                  seg(f"\u201c{i18n.label('motivation', summary['top_motivation'])}\u201d", True), seg(", associated with "),
+                  seg(f"{summary['top_motivation_percent']}% of potential attacks", True), seg(".")]
+            return {'paragraphs': [p], 'facts': ThreatReportPDFGenerator._facts(summary, crit)}
+        s_crit = 's' if crit > 1 else ''
+        p = [seg("L'analyse a identifié "), seg(f"{summary['total_actors']} profils d'attaquants", True),
+             seg(" susceptibles de cibler votre organisation. ")]
+        if crit:
+            p += [seg("Parmi eux, "), seg(f"{crit} acteur{s_crit} classé{s_crit} critique{s_crit}", True),
+                  seg(f" ({summary['critical_list']}) mérite{'nt' if crit > 1 else ''} une attention particulière.")]
+        else:
+            p += [seg("Aucun n'atteint le niveau critique au regard de votre profil\u00a0; le plus pertinent est "),
+                  seg(str(summary['top_actor']), True), seg(".")]
+        p += [seg(" La motivation la plus représentée est "),
+              seg(f"«\u00a0{summary['top_motivation']}\u00a0»", True), seg(", associée à "),
+              seg(f"{summary['top_motivation_percent']}\u00a0% des attaques potentielles", True), seg(".")]
+        return {'paragraphs': [p], 'facts': ThreatReportPDFGenerator._facts(summary, crit)}
+
+    @staticmethod
+    def _facts(summary, crit):
+        return {'actors': summary['total_actors'], 'critical_actors': crit,
+                'top_actor': vocab.code('actor', summary['top_actor']),
+                'top_motivation': vocab.code('motivation', summary['top_motivation']),
+                'top_motivation_percent': summary['top_motivation_percent']}
+
+    def _description(self, actor, default):
+        """Typologie HTML d'un acteur dans la langue du run."""
+        if i18n.is_en():
+            return ACTOR_DESCRIPTIONS_EN.get(actor, default)
+        return self.actor_descriptions.get(actor, default)
+
+    @staticmethod
+    def _characteristic(vocab_name, value):
+        """Sophistication / ressources / probabilité affichées (FR : texte d'origine)."""
+        return _cap(i18n.label(vocab_name, value)) if i18n.is_en() else value
+
+    @staticmethod
+    def _plain_text(html_text):
+        """Description HTML d'un acteur -> texte brut (balises retirées, espaces normalisés)."""
+        from html import unescape
+        return re.sub(r'\s+', ' ', unescape(re.sub(r'<[^>]+>', '', html_text))).strip()
+
+    def build_data(self, data):
+        """Bloc parts.threats du JSON canonique : « En clair » et données des visuels (codes)."""
+        actors = data['actors']
+        matrix = [{
+            'rank': rank, 'actor': vocab.code('actor', a['actor']),
+            'primary_motivation': vocab.code('motivation', a['primary_motivation']),
+            'profile_type': vocab.code('profile_type', a['threat_profile']),
+            'motivation_count': a['motivation_count'], 'level': a['level_class'],
+            'score': round(float(a['rank_score']), 2),
+        } for rank, a in enumerate(actors, 1)]
+        profiles = []
+        for a in actors[:3]:
+            ch = self.actor_characteristics.get(a['actor'], {})
+            profiles.append({
+                'actor': vocab.code('actor', a['actor']), 'level': a['level_class'],
+                'profile_type': vocab.code('profile_type', a['threat_profile']),
+                'sophistication': vocab.code('qualitative_level', ch.get('sophistication')) or 'variable',
+                'resources': vocab.code('resources_level', ch.get('resources')) or 'variable',
+                'probability': vocab.code('qualitative_level', ch.get('probability')) or 'variable',
+                'description': self._plain_text(self._description(a['actor'], tr(T, 'no_desc'))),
+                'motivations': [{
+                    'motivation': vocab.code('motivation', m['motivation']),
+                    'motivation_level': vocab.code('motivation_level', m['motivation_level']),
+                    'resources_level': vocab.code('resources_level', m['resources']),
+                    'relevance': vocab.code('relevance', m['probability']),
+                } for m in a['all_motivations']],
+            })
+        return {'in_short': self.build_in_short(self.generate_executive_summary(data)),
+                'visuals': {'priority_matrix': matrix, 'attacker_profiles': profiles}}
+
     def generate_html_content(self, data):
         """Génère le contenu HTML (système de design Exposia)."""
         actors = data['actors']
         summary = self.generate_executive_summary(data)
+        raw_summary = summary
         summary = {k: (esc(v) if isinstance(v, str) else v) for k, v in summary.items()}
 
         try:
@@ -406,75 +581,67 @@ class ThreatReportPDFGenerator:
             org = ""
         org_disp = esc(org.capitalize()) if org else "—"
 
-        crit = summary['critical_count']
-        s_crit = 's' if crit > 1 else ''
-        if crit:
-            crit_sentence = (
-                f"Parmi eux, <strong>{crit} acteur{s_crit} class&eacute;{s_crit} critique{s_crit}</strong> "
-                f"({summary['critical_list']}) m&eacute;rite{'nt' if crit > 1 else ''} une attention particuli&egrave;re."
-            )
-        else:
-            crit_sentence = (
-                f"Aucun n'atteint le niveau critique au regard de votre profil&nbsp;; "
-                f"le plus pertinent est <strong>{summary['top_actor']}</strong>."
-            )
+        in_short = self.build_in_short(raw_summary)
 
         html = f"""<!DOCTYPE html>
-<html lang="fr">
-<head><meta charset="UTF-8"><title>Rapport Threat Modeling</title></head>
+<html lang="{i18n.lang()}">
+<head><meta charset="UTF-8"><title>{tr(T, 'title_tag')}</title></head>
 <body>
-  <div class="rh-brand">E<span class="x">x</span>posia</div>
-  <div class="rh-doc">Rapport d'analyse &middot; {org_disp}</div>
+  {report_theme.doc_header(org_disp)}
 
-  <div class="kicker">Partie 1 &middot; Menaces</div>
-  <div class="part-title">Qui vous attaque, et pourquoi&nbsp;?</div>
+  <div class="kicker">{tr(T, 'kicker')}</div>
+  <div class="part-title">{tr(T, 'title')}</div>
   <div class="rule"></div>
 
   <div class="callout">
-    <div class="ttl">En clair</div>
-    <p>L'analyse a identifi&eacute; <strong>{summary['total_actors']} profils d'attaquants</strong> susceptibles de cibler votre organisation. {crit_sentence} La motivation la plus repr&eacute;sent&eacute;e est <strong>&laquo;&nbsp;{summary['top_motivation']}&nbsp;&raquo;</strong>, associ&eacute;e &agrave; <strong>{summary['top_motivation_percent']}&nbsp;% des attaques potentielles</strong>.</p>
+    <div class="ttl">{tr(report_theme.T, 'in_short')}</div>
+    {report_theme.render_in_short(in_short['paragraphs'])}
   </div>
 
-  <div class="xsection"><span class="t">M&eacute;thodologie</span></div>
-  <p class="prose">Notre approche du <b>threat modeling</b> croise le profil de votre organisation &mdash; <b>secteur, taille, zone g&eacute;ographique et niveau d'exposition</b> &mdash; avec les caract&eacute;ristiques de <b>huit types d'acteurs malveillants</b>. Nous analysons leurs motivations &mdash; <b>espionnage, profit, sabotage, influence</b> &mdash; pour compl&eacute;ter l'analyse des menaces en tenant compte de votre profil, puis nous pond&eacute;rons chaque acteur selon ces m&ecirc;mes crit&egrave;res afin de le <b>hi&eacute;rarchiser par un filtrage probabiliste</b>. En clair&nbsp;: nous identifions <b>qui peut vous attaquer, pourquoi et avec quel niveau de pertinence au regard de votre profil</b>.</p>
+  <div class="xsection"><span class="t">{tr(report_theme.T, 'methodology')}</span></div>
+  <p class="prose">{tr(T, 'method')}</p>
 
-  <div class="xsection"><span class="t">Matrice de priorisation des menaces</span></div>
+  <div class="xsection"><span class="t">{tr(T, 'matrix')}</span></div>
   <table class="xtable">
-    <thead><tr><th>Rang</th><th>Acteur</th><th>Motivation principale</th><th>Profil</th><th class="center">Niveau</th></tr></thead>
+    <thead><tr>{tr(T, 'th')}</tr></thead>
     <tbody>"""
 
         for index, actor in enumerate(actors):
             level_class, level_text = actor['level_class'], actor['level_text']
             rank_cls = ' r1' if index == 0 else ''
             html += f"""
-      <tr><td><span class="rank{rank_cls}">{index + 1}</span></td><td><strong>{esc(str(actor['actor']))}</strong></td><td>{esc(str(actor['primary_motivation']))}</td><td style="color:#6A7191">{actor['threat_profile']} ({actor['motivation_count']})</td><td class="center"><span class="sev-badge sev-{level_class}">{level_text}</span></td></tr>"""
+      <tr><td><span class="rank{rank_cls}">{index + 1}</span></td><td><strong>{esc(i18n.label('actor', actor['actor']))}</strong></td><td>{esc(i18n.label('motivation', actor['primary_motivation']))}</td><td style="color:#6A7191">{i18n.label('profile_type', actor['threat_profile'])} ({actor['motivation_count']})</td><td class="center"><span class="sev-badge sev-{level_class}">{level_text}</span></td></tr>"""
 
-        html += """
+        html += f"""
     </tbody>
   </table>
 
-  <div class="xsection" style="page-break-before: always;"><span class="t">Profils d'attaquants d&eacute;taill&eacute;s</span></div>"""
+  <div class="xsection" style="page-break-before: always;"><span class="t">{tr(T, 'profiles')}</span></div>"""
 
         for actor in actors[:3]:
             level_class = actor['level_class']
             ch = self.actor_characteristics.get(actor['actor'], {'sophistication': 'Variable', 'resources': 'Variables', 'probability': 'Variable'})
-            desc = self.actor_descriptions.get(actor['actor'], '<p><em>Description non disponible.</em></p>')
+            desc = self._description(actor['actor'], f"<p><em>{tr(T, 'no_desc')}</em></p>")
             n = actor['motivation_count']
+            if i18n.is_en():
+                mot_txt = f"active {i18n.plural(n, 'motivation')}"
+            else:
+                mot_txt = f"motivation{'s' if n > 1 else ''} active{'s' if n > 1 else ''}"
             html += f"""
   <div class="threat-actor avoid-break">
     <div class="threat-head sev-{level_class}">
-      <span class="name">{esc(str(actor['actor']).upper())}</span>
-      <span class="prof">Profil&nbsp;: {actor['threat_profile']} &bull; {n} motivation{'s' if n > 1 else ''} active{'s' if n > 1 else ''}</span>
+      <span class="name">{esc(i18n.label('actor', actor['actor']).upper())}</span>
+      <span class="prof">{tr(T, 'profile', p=i18n.label('profile_type', actor['threat_profile']), n=n, mot=mot_txt)}</span>
     </div>
     <div class="threat-body">
-      <div class="threat-meta"><b>Sophistication</b>&nbsp;: {ch['sophistication']} &nbsp;&bull;&nbsp; <b>Ressources</b>&nbsp;: {ch['resources']} &nbsp;&bull;&nbsp; <b>Probabilit&eacute;</b>&nbsp;: {ch['probability']}</div>
-      <div class="typology"><span class="tt">Typologie</span><p>{desc.replace('<p>', '').replace('</p>', '').strip()}</p></div>
-      <div class="mot-title">Motivations identifi&eacute;es</div>
+      <div class="threat-meta">{tr(T, 'meta', s=self._characteristic('qualitative_level', ch['sophistication']), r=self._characteristic('resources_level', ch['resources']), p=self._characteristic('qualitative_level', ch['probability']))}</div>
+      <div class="typology"><span class="tt">{tr(T, 'typology')}</span><p>{desc.replace('<p>', '').replace('</p>', '').strip()}</p></div>
+      <div class="mot-title">{tr(T, 'motivations')}</div>
       <ul class="mot-list">"""
             for idx, m in enumerate(actor['all_motivations']):
                 sec = '' if idx < 2 else ' secondary'
                 html += f"""
-        <li class="mot-item{sec}"><div class="m">{esc(str(m['motivation']))}</div><div class="d">Niveau {esc(str(_fr(FR_MOTIVATION, m['motivation_level'])))} &times; Ressources {esc(str(_fr(FR_RESOURCES, m['resources'])))} &times; Pertinence {esc(str(_fr(FR_RELEVANCE, m['probability'])))}</div></li>"""
+        <li class="mot-item{sec}"><div class="m">{esc(i18n.label('motivation', m['motivation']))}</div><div class="d">{self._motivation_line(m)}</div></li>"""
             html += """
       </ul>
     </div>
@@ -488,6 +655,8 @@ class ThreatReportPDFGenerator:
     def generate_pdf_report(self, data):
         """Génère le rapport PDF avec WeasyPrint"""
 
+        from weasyprint import HTML, CSS  # PDF seulement : build_data reste importable sans WeasyPrint
+        from weasyprint.text.fonts import FontConfiguration
         try:
             # Génération du contenu HTML
             html_content = self.generate_html_content(data)
@@ -566,3 +735,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def build_threats_data(data_dir='.'):
+    """parts.threats du JSON canonique, calculé depuis le dossier data/ d'une campagne."""
+    generator = ThreatReportPDFGenerator(data_dir=data_dir)
+    return generator.build_data(generator.process_data(generator.load_csv_data(generator.find_csv_file())))
