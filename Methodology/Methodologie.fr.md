@@ -41,7 +41,7 @@ La note globale est une aide à la priorisation, pas un substitut à l'examen de
 ```
                       Parameters/  (CSV : ports, chemins, mesures, matrices, CVSS)
                            │
-   domaine ──► D1 découverte ──► D2 mitigation ──► D3 menaces (interactif)
+   domaine ──► D1 découverte ──► D2 mitigation ──► D3 menaces (profil)
                 │  Exposia_<domaine>.csv  │ + mesures    │ threat_analysis_*.csv
                 │  run_summary.json       │              │
                 ▼                         ▼              ▼
@@ -50,14 +50,19 @@ La note globale est une aide à la priorisation, pas un substitut à l'examen de
                                                          ▼
                                        R9 assemblage ◄── R11 sommaire
                                                          ▼
-                          Rapport_Final_*.pdf  +  R10 → Exposia_<domaine>_presentation.csv
+                                                Rapport_Final_*.pdf
+
+   data/ ──► R13 → Exposia_<domaine>_results.json ──► R12 → Exposia_<domaine>_digest.md
+         └─► R10 → Exposia_<domaine>_presentation.csv   (dernière étape : synthèse console)
 ```
 
-**Fil conducteur de données.** D1 écrit un fichier de travail `Exposia_<domaine>.csv` au format *explosé* : une exposition, N récits d'attaque, N mesures de mitigation, soit une ligne par combinaison. D2 l'enrichit sur place (idempotent : relancé, il reconstitue les lignes de base avant de recommencer). Les modules R le lisent sans jamais le modifier. R10 le ré-agrège en une vue lisible : une ligne par exposition × CVE.
+**Fil conducteur de données.** D1 écrit un fichier de travail `Exposia_<domaine>.csv` au format *explosé* : une exposition, N récits d'attaque, N mesures de mitigation, soit une ligne par combinaison. D2 l'enrichit sur place (idempotent : relancé, il reconstitue les lignes de base avant de recommencer). Les modules R le lisent sans jamais le modifier. R13 écrit le JSON canonique avec les mêmes fonctions que les parties du rapport ; R12 condense ce JSON pour un assistant IA ; R10 ré-agrège le fichier de travail en une vue lisible (une ligne par exposition × CVE) et affiche la synthèse du run, en dernière étape.
+
+**Dossier de campagne.** La racine de `Result/<campagne>/` ne contient que les livrables (PDF, CSV de présentation, JSON canonique, digest). Tout le reste est dans `data/` : fichiers de travail, `run_summary.json`, caches, et `campaign.json`, qui enregistre le domaine propriétaire du dossier (pour que `x.fr` n'écrase jamais la campagne de `x.com`).
 
 **Le tag, pivot sémantique.** Les récits d'attaque (`Ports_to_attack.csv`, étapes CVSS) et les mesures (`mitigation_measures.csv`) ne se connaissent pas : ils partagent des *tags* (`acces_non_authentifie`, `vol_donnees_sensibles`…). Un tag sans mesure laisserait un scénario sans réponse ; un test automatique vérifie que chaque tag utilisé a au moins une mesure.
 
-**Interactivité.** Seule D3 pose des questions (secteur, taille, zone). La note ASM vient de D1 ; D3 ne la demande que si elle manque. `--skip-threat` saute l'étape.
+**Interactivité.** Seule D3 a besoin d'une saisie : le profil de l'organisation (secteur, taille, zone), passé par `--secteur`, `--taille`, `--zone` ; une valeur omise est demandée au clavier, et refusée sans terminal. Les valeurs acceptées sont celles des matrices, listées par `--help`. La note ASM n'est jamais saisie : elle vient de D1, et D3 s'arrête si elle manque. `--skip-threat` saute l'étape.
 
 ## 3. Algorithmes transverses
 
@@ -67,8 +72,8 @@ Chaque ligne (exposition, éventuellement avec une CVE) reçoit une qualificatio
 
 | Service connu | CVE | Calcul |
 |---|---|---|
-| oui | oui | `base × multiplicateur de service`, puis plancher exploit |
-| non | oui | `base` seule, puis plancher exploit |
+| oui | oui | `base × multiplicateur de service`, puis planchers exploit, EPSS et KEV |
+| non | oui | `base` seule, puis planchers exploit, EPSS et KEV |
 | oui | non | criticité du service seule : CRITIQUE ou HAUTE → Medium ; MOYENNE ou FAIBLE → Low |
 | non | non | Low (score 0,1) |
 
@@ -84,7 +89,21 @@ base = 0,60 × EPSS + 0,25 × (CVSS / 10) + 0,15 × exp(−âge / 8)
 
 **Plancher « exploit public ».** Une CVE pour laquelle au moins un exploit public est référencé (ExploitDB ou PoC-in-GitHub) n'est jamais qualifiée sous un plancher qui dépend de sa gravité : **High si CVSS ≥ 7, Medium sinon** (un CVSS inconnu compte pour 0). Le plancher relève une qualification, il ne l'abaisse jamais, et ne s'applique qu'aux lignes portant une CVE.
 
-*Pourquoi ce plancher.* L'existence d'un exploit public est un fait observé, alors que l'EPSS est une estimation. Sans ce plancher, une faille ancienne et critique, exploitable clé en main mais à EPSS bas, pouvait finir en Low (par exemple CVSS 9,8, EPSS 0,02, CVE de 2016 sur un service HAUTE : score 0,33). Elle n'avait alors qu'un récit et aucune mesure. Le plancher est conditionné au CVSS pour ne pas porter en High une faille mineure dotée d'un simple PoC (par exemple CVSS 4,2, EPSS 0,002, un exploit référencé). Les règles sont réglables (`EXPLOIT_FLOOR_RULES` dans D1) ; une liste vide désactive le plancher.
+*Pourquoi ce plancher.* L'existence d'un exploit public est un fait observé, alors que l'EPSS est une estimation. Sans ce plancher, une faille ancienne et critique, exploitable clé en main mais à EPSS bas, pouvait finir en Low (par exemple CVSS 9,8, EPSS 0,02, CVE de 2016 sur un service HAUTE : score 0,33). Elle n'avait alors qu'un récit et aucune mesure. Le plancher est conditionné au CVSS pour ne pas porter en High une faille mineure dotée d'un simple PoC (par exemple CVSS 4,2, EPSS 0,002, un exploit référencé). Les règles sont réglables (`EXPLOIT_FLOOR_RULES` dans `exposia_scoring.py`) ; une liste vide désactive le plancher.
+
+**Plancher « EPSS ».** Une CVE absente du KEV dont l'EPSS dépasse **10 %** est au moins **High**. L'EPSS pèse déjà 60 % de la formule : ce plancher ne rattrape que les CVE que le CVSS ou l'âge tirent vers le bas alors que l'activité observée est réelle (sur les jeux de test, une CVE sur trente : EPSS 0,198, Medium → High).
+
+**Plancher « KEV ».** Une CVE inscrite au catalogue de la CISA des vulnérabilités activement exploitées (*Known Exploited Vulnerabilities*) est une urgence : l'exploitation est constatée, pas estimée. Elle est **Critical**, sauf une élévation de privilèges isolée, qui est **High** :
+
+| Condition (CVE du KEV) | Plancher |
+|---|---|
+| vecteur réseau ou adjacent (`AV:N`, `AV:A`), ou vecteur inconnu | Critical |
+| portée modifiée (`S:C`) : évasion de conteneur ou d'hyperviseur, quel que soit le vecteur | Critical |
+| vecteur local ou physique sur un service de criticité CRITIQUE (administration, base de données…) | Critical |
+| vecteur local ou physique, et une CVE de vecteur réseau exposée sur le même hôte (IP) : chaînage | Critical |
+| autres cas : vecteur local ou physique, portée inchangée, service non critique, aucune porte d'entrée réseau | High |
+
+*Pourquoi cette nuance.* Exposia regarde le périmètre depuis Internet : une élévation de privilèges suppose un premier accès. Elle reste Critical dès que ce premier accès est plausible (CVE réseau sur l'hôte), que la machine est sensible, ou que la faille franchit une frontière de sécurité. Les deux planchers relèvent une qualification, ne l'abaissent jamais, et s'ajoutent au plancher exploit. Le KEV est un accélérateur, **jamais un certificat d'innocuité** : une CVE absente du catalogue n'est pas réputée non exploitée. Règles et seuils : `Modules/exposia_scoring.py`.
 
 ### 3.2 Récit d'attaque : trois étapes, un plafond
 
@@ -135,7 +154,7 @@ CVSS, EPSS, KEV et la note d'Exposia sont des **grilles de lecture** : chacune r
 | KEV (CISA) | une exploitation constatée dans la nature | l'exposition de votre système, ni les failles pas encore cataloguées |
 | Note Exposia | un ordre de lecture pour le périmètre | un niveau de risque réel |
 
-Le volume de CVE publiées augmente, ce qui rend le filtrage plus nécessaire et plus fragile. Exposia combine donc CVSS et EPSS (§3.1), relevés par le plancher « exploit public », et **n'intègre pas encore KEV**. C'est la piste la plus directe : un signal binaire « exploité » ferait remonter une exposition sur la preuve et non sur l'estimation, sur le même modèle que le plancher exploit. Il ajouterait un appel réseau (§7) et modifierait la formule de qualification.
+Le volume de CVE publiées augmente, ce qui rend le filtrage plus nécessaire et plus fragile. Exposia combine donc CVSS et EPSS (§3.1), relevés par trois planchers : « exploit public », EPSS et **KEV**. Ce dernier fait remonter une exposition sur la preuve d'exploitation et non sur l'estimation ; son absence ne vaut pas absence d'exploitation.
 
 ## 4. Modules de données (D)
 
@@ -200,7 +219,7 @@ La colonne `avg_composite_score` de `mitigation_prioritization_enhanced.csv` gar
 
 | | |
 |---|---|
-| **Entrée** | secteur, taille, zone (saisie) ; note ASM (D1) ; matrices `Threat_matrices/M1..M7` |
+| **Entrée** | secteur, taille, zone (options ou saisie) ; note ASM (D1) ; matrices `Threat_matrices/M1..M7` |
 | **Sortie** | `threat_analysis_*.csv`, une ligne par motivation retenue, avec `Score_Acteur` |
 
 Inspirée de la taxonomie d'EBIOS RM : 8 sources de risque (Étatique, Crime organisé, Terroriste, Activiste, Officine, Amateur, Vengeur, Malveillant), 6 motivations. Pour chaque acteur :
@@ -222,19 +241,23 @@ Niveaux (lus par R1) : **Critique ≥ 300 ; Élevé ≥ 120 ; Modéré ≥ 40 ; 
 
 Chaque partie du rapport suit la **même structure**, pour que le lecteur s'y repère : un encadré « En clair » (l'essentiel en trois phrases), une « Méthodologie » courte, une matrice ou un tableau, puis le détail. La synthèse suffit pour décider ; les parties apportent le détail. Tous les modules partagent le thème de `R0_report_theme` : un changement de style se fait en un seul endroit.
 
+**Langue.** Tous les livrables (PDF, CSV, JSON, digest) sont produits dans la langue du run, le français par défaut, l'anglais avec `--lang en`. Chaque module déclare ses textes fixes dans les deux langues, côte à côte. Les textes des référentiels (récits d'attaque, mesures, indicateurs) sont traduits dans une colonne `<colonne>_EN` voisine de la colonne française, dans les mêmes fichiers de `Parameters/` ; le fichier de travail garde le texte français, remplacé au rendu par sa traduction. Une campagne déjà collectée se rend donc en anglais sans nouvelle collecte. Les codes du JSON canonique ne dépendent pas de la langue ; ses textes et sa table `labels` suivent `run.lang`.
+
 | Module | Rôle | Choix méthodologique |
 |---|---|---|
 | **R5** couverture | Organisation, domaine, date, criticité globale | La criticité vient de D1 (§3.3). |
 | **R7** avant-propos | « Ce que ce rapport dit, et ce qu'il ne dit pas » | Texte fixe : il décrit la méthode et ses limites, pas les résultats. |
 | **R11** sommaire | Table des matières cliquable | Les numéros de page ne sont connus qu'à l'assemblage : R9 appelle R11 après avoir compté les pages. |
 | **R6** synthèse | « De la menace à la mitigation » : trois chaînes acteur → actif → vecteur → mesure | Voir ci-dessous. |
-| **R1** partie 1, menaces | Qui attaque, et pourquoi | Classe les acteurs par `Score_Acteur` (D3), avec leur profil (nombre de motivations). |
+| **R1** partie 1, menaces | Qui attaque, et pourquoi | Classe les acteurs par `Score_Acteur` (D3), avec leur profil (nombre de motivations). À score égal, l'ordre de la matrice M1 départage les acteurs (Étatique, Crime organisé…), et celui de la matrice M2 les motivations d'un même acteur ; R6 applique la même règle. |
 | **R2** partie 2, actifs | Quel périmètre est exposé | Sous-domaines, services, catégories ; classification affichée comme « nature présumée ». |
 | **R3** partie 3, risques | Quels impacts | Top 10 des actifs : qualification, puis impact métier du service (criticité de `services_list.csv`), puis EPSS ; scénarios types ; trois scénarios affichés par actif. L'impact départage les actifs sans CVE (EPSS nul) : à qualification égale, un service d'administration critique passe devant une application web. |
 | **R4** partie 4, mitigation | Que faire concrètement | Mesures présentées comme **bonnes pratiques** de sensibilisation : corriger une CVE, c'est mettre à jour le logiciel, et le rapport le dit en tête de partie. |
 | **R8** quatrième de couverture | Clôture, confidentialité | Même fond que la couverture : les deux forment une paire. |
 | **R9** assemblage | Fusion des PDF, numérotation, signets | Ordre fixe ; couverture et quatrième exclues de la numérotation ; PDF sources conservés par défaut. |
 | **R10** vue présentation | Livrable CSV lisible | Une ligne par exposition × CVE : qualification la plus élevée du groupe, récits dédupliqués, mesures repliées (nombre, IDs, priorité maximale). |
+| **R12** digest IA | Markdown pour un assistant IA | Lit uniquement le JSON canonique : mêmes chiffres, même ordre des expositions, mêmes scénarios et même classement des mesures que le rapport. Hiérarchique (actif → service → CVE), dédoublonné (chaque récit et chaque mesure décrits une fois, puis cités), avec le statut de chaque information et la règle de qualification générée depuis `exposia_scoring`. Les valeurs d'origine externe sont contrôlées contre un format strict avant d'être écrites. |
+| **R13** JSON canonique | Résultats pour d'autres outils | `Exposia_<domaine>_results.json`, calculé par les mêmes fonctions que les parties du rapport (mêmes chiffres et mêmes « En clair » par construction). Codes stables plutôt que libellés ; catalogues des hôtes, expositions (sous-domaine, port), scénarios, mesures et acteurs, cités par identifiant ; sources de collecte reprises de D1. Format : `schema/results.schema.json` (JSON Schema). |
 
 **Ordre du rapport :** couverture, avant-propos, sommaire, synthèse, parties 1 à 4, quatrième de couverture.
 
@@ -248,8 +271,12 @@ Chaque partie du rapport suit la **même structure**, pour que le lecteur s'y re
 
 | Fichier | Rôle |
 |---|---|
-| `run_pipeline.sh` | Orchestrateur : enchaîne les étapes, options `--skip-*`, `--continue-on-error`, `--clean`. |
-| `exposia_paths.py` | Arborescence unique, nom de campagne (domaine enregistré, sans suffixe public). |
+| `run_pipeline.sh` | Orchestrateur : enchaîne les étapes (D1 → D3, R5 → R9, puis R13, R12, R10), options `--skip-*`, `--continue-on-error`, `--clean`, `--events`, `--lang`. |
+| `exposia_paths.py` | Arborescence unique, nom de campagne (domaine enregistré, sans suffixe public), marqueur de propriété `data/campaign.json`. |
+| `exposia_scoring.py` | Poids, seuils et planchers de qualification (exploit, EPSS, KEV), niveaux des acteurs : source unique pour D1, le rapport et le digest. |
+| `exposia_vocab.py` | Codes stables et libellés FR / EN (sévérités, acteurs, catégories…) pour le rapport et le JSON canonique ; codes des catégories dans `Parameters/service_categories.csv` et `mitigation_categories.csv`. |
+| `exposia_i18n.py` | Langue des livrables (`EXPOSIA_LANG`, fixée par `--lang`) : textes fixes, traduction des textes de référentiel par leurs colonnes `_EN`, formats des nombres, pourcentages et dates. |
+| `exposia_events.py` | Événements de progression (`--events`, JSON Lines dans `data/events.jsonl`) pour un outil qui pilote Exposia : étapes, avancement des boucles, instantanés de ce que chaque phase de D1 a trouvé, état des sources (nouvelles tentatives, erreurs). Inactif sans l'option ; une erreur d'écriture n'arrête jamais le run. Deux familles de chiffres aux noms distincts : les compteurs bruts de la collecte (`count`, domaine racine et frontaux CDN compris) et, une fois les frontaux CDN écartés, les chiffres consolidés (`consolidated`), égaux à ceux du rapport et du JSON canonique. |
 | `exposia_config.py` | Clés API : variables d'environnement, sinon `config.yaml`. Jamais en argument. |
 | `exposia_ui.py` | Affichage console (couleurs, statuts, barres) ; désactivé si la sortie est redirigée. |
 
@@ -269,6 +296,7 @@ Tout le trafic sortant vient de `D1_asset_discovery_assessment.py`. Un test (`te
 | **EPSS (FIRST)** | `GET api.first.org/data/v1/epss?cve=<CVE>` | un identifiant CVE | non | probabilité d'exploitation |
 | **PoC-in-GitHub** | `GET poc-in-github.motikan2010.net/api/v1/?cve_id=<CVE>` | un identifiant CVE | non | exploits publics |
 | **ExploitDB** | `GET` du fichier `files_exploits.csv` (GitLab), une fois par exécution | rien (téléchargement) | non | correspondance CVE → exploit |
+| **KEV (CISA)** | `GET` du catalogue `known_exploited_vulnerabilities.json` (cisa.gov, puis le miroir GitHub de la CISA), au plus une fois par jour | rien (téléchargement) | non | CVE activement exploitées |
 
 Rien d'autre n'est envoyé : ni contenu du rapport, ni nom d'organisation, ni secteur, ni réponses de D3. Les clés ne transitent que vers leur service, jamais en argument de ligne de commande.
 
@@ -278,7 +306,7 @@ Rien d'autre n'est envoyé : ni contenu du rapport, ni nom d'organisation, ni se
 - **Les tiers apprennent que vous vous intéressez au domaine** : crt.sh et Cert Spotter reçoivent le nom de domaine, Shodan les IP, NVD, EPSS et PoC-in-GitHub les CVE concernées. Tester un périmètre qui n'est pas le vôtre laisse donc des traces chez ces services.
 - **Sans clé Shodan**, le scan est ignoré : le rapport contient les sous-domaines et IP, sans CVE. `--resolve-ips` limite l'exécution à la résolution DNS.
 - **Sans clé NVD**, l'analyse reste complète mais lente : environ 6 s par CVE (limite publique du service, 5 requêtes par 30 s) contre 0,7 s avec une clé. D1 affiche une estimation de durée.
-- **Caches locaux** : la liste des sous-domaines (`crtsh_cache_<domaine>.json`) est conservée dans `Result/<campagne>/data/` ; elle évite de réinterroger crt.sh à chaque exécution.
+- **Caches locaux** : la liste des sous-domaines (`crtsh_cache_<domaine>.json`) et le catalogue KEV (`kev_cache.json`, 24 h) sont conservés dans `Result/<campagne>/data/` ; ils évitent de réinterroger crt.sh et la CISA à chaque exécution. Sans réseau, un cache KEV périmé est utilisé avec un avertissement ; sans aucun cache, le statut KEV reste inconnu et le plancher KEV n'est pas appliqué.
 - **Identification** : NVD reçoit `User-Agent: CVE-Analyzer-Tool/1.0` ; les autres requêtes JSON se présentent avec un agent générique (`Mozilla/5.0`).
 
 ### 7.3 Conditions d'utilisation
@@ -304,7 +332,7 @@ Exposia est conçu pour votre propre périmètre ou pour un périmètre pour leq
 - **CDN :** seuls les CDN listés dans `cdn_ranges.csv` sont reconnus (Cloudflare fourni). Un autre CDN (Akamai, Fastly, CloudFront…) gonfle encore le décompte tant qu'il n'y est pas ajouté, par plage ou par ASN. Une vraie exposition d'origine sur une IP de CDN (rare) serait réduite aux ports 80 et 443.
 - **Critères « interne » codés en dur :** les mots-clés et ports qui définissent un service présumé sensible sont dans le code de D1, contrairement au reste du référentiel. Les adapter demande de modifier D1 tant qu'ils ne sont pas portés dans `services_list.csv`.
 - **Classement des mesures :** le maximum fait remonter une mesure liée à une seule exposition grave ; la couverture ne départage qu'ensuite. Une mesure très générique reste haute si elle touche une exposition critique.
-- **Pas de KEV :** l'exploitation confirmée n'entre pas dans la qualification ; une faille exploitée sans exploit public référencé et à EPSS bas peut être sous-classée (§3.5).
+- **KEV :** le catalogue de la CISA ne recense que l'exploitation qu'elle a documentée ; une CVE absente n'est pas réputée sûre. Le chaînage ne regarde que le même hôte : une porte d'entrée sur un hôte voisin ne compte pas. Le CVSS v2 n'a pas de portée : pour les CVE anciennes, seul le vecteur s'applique.
 - **Plancher exploit :** un exploit public référencé n'est pas toujours fonctionnel (PoC incomplet, mauvaise version) ; le plancher peut donc surclasser une CVE. Le conditionner au CVSS limite l'effet aux failles graves. Le CVSS utilisé est celui que rapporte Shodan, qui peut différer de celui de NVD.
-- **Calibrage :** pondérations (0,60 / 0,25 / 0,15), seuils (0,35 / 0,55 / 0,75), plancher exploit (High si CVSS ≥ 7, Medium sinon) et matrices M1..M7 sont des choix de conception, ouverts à validation empirique.
+- **Calibrage :** pondérations (0,60 / 0,25 / 0,15), seuils (0,35 / 0,55 / 0,75), plancher exploit (High si CVSS ≥ 7, Medium sinon), plancher EPSS (10 %), plancher KEV et matrices M1..M7 sont des choix de conception, ouverts à validation empirique.
 - **Aide à la décision :** le rapport n'est pas un audit et ne remplace pas un test d'intrusion.
