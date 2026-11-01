@@ -52,6 +52,12 @@ try:
 except Exception:
     exposia_paths = None
 
+# Langue du livrable (EXPOSIA_LANG) : optionnelle comme exposia_paths ; à défaut, français.
+try:
+    import exposia_i18n as i18n  # noqa: E402
+except Exception:
+    i18n = None
+
 # UI console centralisée (même rendu que R1..R9). Absente hors du projet :
 # repli sur un shim minimal pour que le script reste exécutable en isolé.
 try:
@@ -78,7 +84,12 @@ except Exception:
 
 # --- Vocabulaires d'ordonnancement (pour tri et agrégats) --------------------
 QUALIF_ORDER = {'Critical': 0, 'High': 1, 'Medium': 2, 'Low': 3}
-PRIORITY_RANK = {'CRITIQUE': 4, 'HAUTE': 3, 'MOYENNE': 2, 'FAIBLE': 1}
+PRIORITY_RANK = {'CRITIQUE': 4, 'HAUTE': 3, 'MOYENNE': 2, 'FAIBLE': 1,
+                 'CRITICAL': 4, 'HIGH': 3, 'MEDIUM': 2, 'LOW': 1}
+
+# Valeurs du livrable en anglais : niveaux (impact métier, priorité) et textes.
+LEVEL_EN = {'CRITIQUE': 'CRITICAL', 'HAUTE': 'HIGH', 'MOYENNE': 'MEDIUM', 'FAIBLE': 'LOW'}
+TEXT_COLS = ('reconnaissance', 'exploitation', 'impact', 'organizational_measure')
 
 # Séparateur interne des champs repliés. Volontairement différent du délimiteur
 # CSV (';') pour rester lisible une fois ouvert dans un tableur.
@@ -90,6 +101,7 @@ PASSTHROUGH_COLS = [
     'domain', 'subdomain', 'ip_address', 'port', 'classification',
     'service', 'category', 'cve', 'cve_year', 'cvss_score', 'cvss_version',
     'cvss_vector', 'epss_score', 'exploits_count', 'exploit_references',
+    'kev', 'kev_date_added', 'kev_ransomware',
     'business_impact', 'exposia_qualification',
 ]
 
@@ -181,8 +193,9 @@ def fold_mitigations(group):
     measures.sort(key=lambda m: PRIORITY_RANK.get(m['priority'].upper(), 0), reverse=True)
     ids = ', '.join(m['id'] for m in measures)
     priority_max = measures[0]['priority']
+    colon = ': ' if i18n is not None and i18n.is_en() else ' : '  # typographie de la langue
     detail = LIST_SEP.join(
-        f"{m['id']} ({m['priority']}) : {m['org']}" if m['org'] else f"{m['id']} ({m['priority']})"
+        f"{m['id']} ({m['priority']}){colon}{m['org']}" if m['org'] else f"{m['id']} ({m['priority']})"
         for m in measures
     )
     return len(measures), ids, priority_max, detail
@@ -196,6 +209,22 @@ def max_qualification(group):
     return min(quals, key=lambda q: QUALIF_ORDER[q])
 
 
+def translate(df):
+    """
+    Livrable dans la langue du run : en anglais, catégories, niveaux et textes
+    des référentiels (récits, mesures) traduits ; en français, inchangé.
+    """
+    if i18n is None or not i18n.is_en():
+        return df
+    df = df.copy()
+    df['category'] = df['category'].map(lambda v: i18n.label('service_category', v) if v else v)
+    for col in ('business_impact', 'priority'):
+        df[col] = df[col].map(lambda v: LEVEL_EN.get(str(v).strip().upper(), v))
+    for col in TEXT_COLS:
+        df[col] = df[col].map(lambda v: i18n.text(v) if v else v)
+    return df
+
+
 def build_presentation(df):
     """Construit le DataFrame de présentation à partir du CSV de travail."""
     df = df.fillna('')
@@ -205,13 +234,14 @@ def build_presentation(df):
                                    'priority', 'organizational_measure']:
         if col not in df.columns:
             df[col] = ''
+    df = translate(df)
 
     # Anciens fichiers : une ligne PORT peut porter la CVE de sa ligne source.
     # On la rattache à l'exposition sans CVE.
     port_rows = df['attack_path_type'].astype(str).str.strip().str.upper() == 'PORT'
     if port_rows.any():
         for col in ['cve', 'cve_year', 'cvss_score', 'cvss_version', 'cvss_vector',
-                    'epss_score', 'exploit_references']:
+                    'epss_score', 'exploit_references', 'kev', 'kev_date_added', 'kev_ransomware']:
             df.loc[port_rows, col] = ''
         df.loc[port_rows, 'exploits_count'] = '0'
 
