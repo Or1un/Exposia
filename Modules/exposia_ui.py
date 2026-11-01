@@ -177,7 +177,13 @@ class ModernUI:
         """
         Enveloppe tqdm homogène. Si tqdm n'est pas installé, renvoie l'itérable
         tel quel (dégradation propre plutôt qu'un ImportError à l'import).
+        Avec --events, chaque boucle publie aussi son avancement (exposia_events).
         """
+        try:
+            import exposia_events
+            iterable = exposia_events.track(iterable, desc, total)
+        except Exception:
+            pass
         try:
             from tqdm import tqdm
         except Exception:
