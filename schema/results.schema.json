@@ -1,0 +1,2250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Or1un/Exposia/schema/results.schema.json",
+  "title": "Exposia — résultats canoniques",
+  "description": "Chiffres de synthèse, « En clair » et données des visuels d'une analyse Exposia. Les lecteurs ignorent les champs inconnus (évolution mineure).",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run",
+    "target",
+    "threat_profile",
+    "summary",
+    "parts",
+    "exposures",
+    "scenarios",
+    "mitigations",
+    "actors",
+    "hosts",
+    "labels"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.\\d+\\.\\d+$"
+    },
+    "run": {
+      "type": "object",
+      "required": [
+        "run_id",
+        "generated_at",
+        "analysis_date",
+        "lang",
+        "sources"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "Z$"
+        },
+        "analysis_date": {
+          "type": "string",
+          "format": "date",
+          "description": "Date de l'analyse, en UTC (date de generated_at). La couverture du PDF affiche la date locale."
+        },
+        "lang": {
+          "enum": [
+            "fr",
+            "en"
+          ]
+        },
+        "sources": {
+          "type": "object",
+          "required": [
+            "crtsh",
+            "certspotter",
+            "dns",
+            "shodan",
+            "nvd",
+            "epss",
+            "exploitdb",
+            "poc_in_github",
+            "kev"
+          ],
+          "additionalProperties": {
+            "$ref": "#/$defs/source"
+          },
+          "properties": {
+            "crtsh": {
+              "type": "object",
+              "required": [
+                "status",
+                "retrieved_at"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "status": {
+                  "enum": [
+                    "ok",
+                    "partial",
+                    "unavailable",
+                    "skipped"
+                  ]
+                },
+                "retrieved_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "from_cache": {
+                  "type": "boolean"
+                },
+                "errors": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "certspotter": {
+              "type": "object",
+              "required": [
+                "status",
+                "retrieved_at"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "status": {
+                  "enum": [
+                    "ok",
+                    "partial",
+                    "unavailable",
+                    "skipped"
+                  ]
+                },
+                "retrieved_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "from_cache": {
+                  "type": "boolean"
+                },
+                "errors": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "dns": {
+              "type": "object",
+              "required": [
+                "status",
+                "retrieved_at"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "status": {
+                  "enum": [
+                    "ok",
+                    "partial",
+                    "unavailable",
+                    "skipped"
+                  ]
+                },
+                "retrieved_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "from_cache": {
+                  "type": "boolean"
+                },
+                "errors": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "shodan": {
+              "type": "object",
+              "required": [
+                "status",
+                "retrieved_at"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "status": {
+                  "enum": [
+                    "ok",
+                    "partial",
+                    "unavailable",
+                    "skipped"
+                  ]
+                },
+                "retrieved_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "from_cache": {
+                  "type": "boolean"
+                },
+                "errors": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "nvd": {
+              "type": "object",
+              "required": [
+                "status",
+                "retrieved_at"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "status": {
+                  "enum": [
+                    "ok",
+                    "partial",
+                    "unavailable",
+                    "skipped"
+                  ]
+                },
+                "retrieved_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "from_cache": {
+                  "type": "boolean"
+                },
+                "errors": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "api_version": {
+                  "type": "string"
+                }
+              }
+            },
+            "epss": {
+              "type": "object",
+              "required": [
+                "status",
+                "retrieved_at"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "status": {
+                  "enum": [
+                    "ok",
+                    "partial",
+                    "unavailable",
+                    "skipped"
+                  ]
+                },
+                "retrieved_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "from_cache": {
+                  "type": "boolean"
+                },
+                "errors": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "score_date": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date"
+                },
+                "model_version": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "exploitdb": {
+              "type": "object",
+              "required": [
+                "status",
+                "retrieved_at"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "status": {
+                  "enum": [
+                    "ok",
+                    "partial",
+                    "unavailable",
+                    "skipped"
+                  ]
+                },
+                "retrieved_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "from_cache": {
+                  "type": "boolean"
+                },
+                "errors": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "entries": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "poc_in_github": {
+              "type": "object",
+              "required": [
+                "status",
+                "retrieved_at"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "status": {
+                  "enum": [
+                    "ok",
+                    "partial",
+                    "unavailable",
+                    "skipped"
+                  ]
+                },
+                "retrieved_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "from_cache": {
+                  "type": "boolean"
+                },
+                "errors": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "kev": {
+              "type": "object",
+              "required": [
+                "status",
+                "retrieved_at"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "status": {
+                  "enum": [
+                    "ok",
+                    "partial",
+                    "unavailable",
+                    "skipped"
+                  ]
+                },
+                "retrieved_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "from_cache": {
+                  "type": "boolean"
+                },
+                "errors": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "catalog_version": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "date_released": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "entries": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": [
+        "domain",
+        "campaign"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "domain": {
+          "$ref": "#/$defs/hostname"
+        },
+        "campaign": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "threat_profile": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "sector",
+            "size",
+            "zone"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "sector": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "examples": [
+                "finance",
+                "health",
+                "government",
+                "energy",
+                "defense",
+                "ecommerce",
+                "education",
+                "telecom",
+                "transport",
+                "industry"
+              ],
+              "description": "Code sector. Vocabulaire extensible (fichiers de Parameters/) : un code inconnu reste valide."
+            },
+            "size": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "examples": [
+                "micro",
+                "sme",
+                "midcap",
+                "large"
+              ],
+              "description": "Code size. Vocabulaire extensible (fichiers de Parameters/) : un code inconnu reste valide."
+            },
+            "zone": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "examples": [
+                "western_europe",
+                "eastern_europe",
+                "north_america",
+                "south_america",
+                "asia_pacific",
+                "middle_east",
+                "north_africa",
+                "sub_saharan_africa"
+              ],
+              "description": "Code zone. Vocabulaire extensible (fichiers de Parameters/) : un code inconnu reste valide."
+            }
+          }
+        }
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "criticality",
+        "counts",
+        "qualification_distribution"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "criticality": {
+          "type": "object",
+          "required": [
+            "rating",
+            "score"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "rating": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/severity"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "score": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          }
+        },
+        "counts": {
+          "type": "object",
+          "required": [
+            "subdomains",
+            "unresolved_subdomains",
+            "ips",
+            "services",
+            "sensitive_services",
+            "service_categories",
+            "exposures",
+            "cves",
+            "exploits",
+            "kev_cves",
+            "attack_scenarios",
+            "actors",
+            "mitigations"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "subdomains": {
+              "$ref": "#/$defs/count"
+            },
+            "unresolved_subdomains": {
+              "$ref": "#/$defs/count"
+            },
+            "ips": {
+              "$ref": "#/$defs/count"
+            },
+            "services": {
+              "$ref": "#/$defs/count"
+            },
+            "sensitive_services": {
+              "$ref": "#/$defs/count"
+            },
+            "service_categories": {
+              "$ref": "#/$defs/count"
+            },
+            "exposures": {
+              "$ref": "#/$defs/count"
+            },
+            "cves": {
+              "$ref": "#/$defs/count"
+            },
+            "exploits": {
+              "$ref": "#/$defs/count"
+            },
+            "kev_cves": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "attack_scenarios": {
+              "$ref": "#/$defs/count"
+            },
+            "actors": {
+              "$ref": "#/$defs/count"
+            },
+            "mitigations": {
+              "$ref": "#/$defs/count"
+            }
+          }
+        },
+        "qualification_distribution": {
+          "$ref": "#/$defs/severityCounts"
+        }
+      }
+    },
+    "parts": {
+      "type": "object",
+      "required": [
+        "synthesis",
+        "threats",
+        "assets",
+        "risks",
+        "mitigations"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "synthesis": {
+          "$ref": "#/$defs/part_synthesis"
+        },
+        "threats": {
+          "$ref": "#/$defs/part_threats"
+        },
+        "assets": {
+          "$ref": "#/$defs/part_assets"
+        },
+        "risks": {
+          "$ref": "#/$defs/part_risks"
+        },
+        "mitigations": {
+          "$ref": "#/$defs/part_mitigations"
+        }
+      }
+    },
+    "exposures": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/exposure"
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/scenario"
+      }
+    },
+    "mitigations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/mitigation"
+      }
+    },
+    "actors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/actor"
+      }
+    },
+    "labels": {
+      "type": "object",
+      "required": [
+        "severity",
+        "actor",
+        "motivation",
+        "nature",
+        "mitigation_type",
+        "service_category",
+        "mitigation_category",
+        "qualitative_level",
+        "resources_level",
+        "difficulty",
+        "duration_unit",
+        "hosting"
+      ],
+      "additionalProperties": {
+        "$ref": "#/$defs/labelMap"
+      },
+      "properties": {
+        "severity": {
+          "$ref": "#/$defs/labelMap"
+        },
+        "actor": {
+          "$ref": "#/$defs/labelMap"
+        },
+        "motivation": {
+          "$ref": "#/$defs/labelMap"
+        },
+        "nature": {
+          "$ref": "#/$defs/labelMap"
+        },
+        "mitigation_type": {
+          "$ref": "#/$defs/labelMap"
+        },
+        "service_category": {
+          "$ref": "#/$defs/labelMap"
+        },
+        "mitigation_category": {
+          "$ref": "#/$defs/labelMap"
+        },
+        "qualitative_level": {
+          "$ref": "#/$defs/labelMap"
+        },
+        "resources_level": {
+          "$ref": "#/$defs/labelMap"
+        },
+        "difficulty": {
+          "$ref": "#/$defs/labelMap"
+        },
+        "duration_unit": {
+          "$ref": "#/$defs/labelMap"
+        },
+        "hosting": {
+          "$ref": "#/$defs/labelMap"
+        }
+      }
+    },
+    "hosts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/host"
+      }
+    }
+  },
+  "$defs": {
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rank": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "percentage": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "pattern": "<[a-zA-Z/!]|&[a-zA-Z]+;|&#\\d+;"
+      }
+    },
+    "hostname": {
+      "type": "string",
+      "pattern": "^(\\*\\.)?[a-z0-9_]([a-z0-9_-]{0,62})(\\.[a-z0-9_]([a-z0-9_-]{0,62}))*$"
+    },
+    "ip": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-FxX.:]{2,45}$"
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "cve": {
+      "type": "string",
+      "pattern": "^CVE-\\d{4}-\\d{4,7}$"
+    },
+    "exposureId": {
+      "type": "string",
+      "pattern": "^[^:\\s]+:\\d{1,5}$"
+    },
+    "scenarioId": {
+      "type": "string",
+      "pattern": "^S\\d{2,}$"
+    },
+    "mitigationId": {
+      "type": "string",
+      "pattern": "^MIT-[A-Z0-9]+(-[A-Z0-9]+)*-\\d+$"
+    },
+    "severity": {
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "severityCounts": {
+      "type": "object",
+      "required": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "critical": {
+          "$ref": "#/$defs/count"
+        },
+        "high": {
+          "$ref": "#/$defs/count"
+        },
+        "medium": {
+          "$ref": "#/$defs/count"
+        },
+        "low": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    },
+    "actorCode": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "examples": [
+        "state",
+        "organized_crime",
+        "terrorist",
+        "activist",
+        "mercenary",
+        "amateur",
+        "avenger",
+        "malicious"
+      ],
+      "description": "Code actorCode. Vocabulaire extensible (fichiers de Parameters/) : un code inconnu reste valide."
+    },
+    "motivationCode": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "examples": [
+        "espionage",
+        "strategic_positioning",
+        "influence",
+        "disruption",
+        "profit",
+        "challenge"
+      ],
+      "description": "Code motivationCode. Vocabulaire extensible (fichiers de Parameters/) : un code inconnu reste valide."
+    },
+    "nature": {
+      "enum": [
+        "sensitive",
+        "standard"
+      ]
+    },
+    "difficulty": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "very_high"
+      ]
+    },
+    "mitigationType": {
+      "enum": [
+        "preventive",
+        "detective",
+        "corrective"
+      ]
+    },
+    "labelMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "inShort": {
+      "type": "object",
+      "required": [
+        "paragraphs",
+        "facts"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "paragraphs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "text": {
+                  "$ref": "#/$defs/text"
+                },
+                "strong": {
+                  "const": true
+                }
+              }
+            }
+          }
+        },
+        "facts": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": [
+                  "number",
+                  "string",
+                  "null",
+                  "boolean"
+                ]
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": [
+                    "number",
+                    "string",
+                    "null",
+                    "boolean"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "focusList": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "mitigation_id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "mitigation_id": {
+            "$ref": "#/$defs/mitigationId"
+          }
+        }
+      }
+    },
+    "part_synthesis": {
+      "type": "object",
+      "required": [
+        "in_short",
+        "visuals"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "in_short": {
+          "$ref": "#/$defs/inShort"
+        },
+        "visuals": {
+          "type": "object",
+          "required": [
+            "threat_chains",
+            "focus"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "threat_chains": {
+              "type": "array",
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "required": [
+                  "rank",
+                  "severity",
+                  "actor",
+                  "motivation",
+                  "exposure_id",
+                  "cve",
+                  "impact",
+                  "mitigation_id"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "rank": {
+                    "$ref": "#/$defs/rank"
+                  },
+                  "severity": {
+                    "$ref": "#/$defs/severity"
+                  },
+                  "actor": {
+                    "$ref": "#/$defs/actorCode"
+                  },
+                  "motivation": {
+                    "$ref": "#/$defs/motivationCode"
+                  },
+                  "exposure_id": {
+                    "$ref": "#/$defs/exposureId"
+                  },
+                  "cve": {
+                    "$ref": "#/$defs/cve"
+                  },
+                  "impact": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/text"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "mitigation_id": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/mitigationId"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "focus": {
+              "$ref": "#/$defs/focusList"
+            }
+          }
+        }
+      }
+    },
+    "part_threats": {
+      "type": "object",
+      "required": [
+        "in_short",
+        "visuals"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "in_short": {
+          "$ref": "#/$defs/inShort"
+        },
+        "visuals": {
+          "type": "object",
+          "required": [
+            "priority_matrix",
+            "attacker_profiles"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "priority_matrix": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "rank",
+                  "actor",
+                  "primary_motivation",
+                  "profile_type",
+                  "motivation_count",
+                  "level",
+                  "score"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "rank": {
+                    "$ref": "#/$defs/rank"
+                  },
+                  "actor": {
+                    "$ref": "#/$defs/actorCode"
+                  },
+                  "primary_motivation": {
+                    "$ref": "#/$defs/motivationCode"
+                  },
+                  "profile_type": {
+                    "enum": [
+                      "targeted",
+                      "dual",
+                      "triple",
+                      "multi"
+                    ]
+                  },
+                  "motivation_count": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "level": {
+                    "$ref": "#/$defs/severity"
+                  },
+                  "score": {
+                    "type": "number"
+                  }
+                }
+              }
+            },
+            "attacker_profiles": {
+              "type": "array",
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "required": [
+                  "actor",
+                  "level",
+                  "profile_type",
+                  "sophistication",
+                  "resources",
+                  "probability",
+                  "description",
+                  "motivations"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "actor": {
+                    "$ref": "#/$defs/actorCode"
+                  },
+                  "level": {
+                    "$ref": "#/$defs/severity"
+                  },
+                  "profile_type": {
+                    "enum": [
+                      "targeted",
+                      "dual",
+                      "triple",
+                      "multi"
+                    ]
+                  },
+                  "sophistication": {
+                    "$ref": "#/$defs/qualitativeLevel"
+                  },
+                  "resources": {
+                    "$ref": "#/$defs/resourcesLevel"
+                  },
+                  "probability": {
+                    "$ref": "#/$defs/qualitativeLevel"
+                  },
+                  "description": {
+                    "$ref": "#/$defs/text"
+                  },
+                  "motivations": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/actorMotivation"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "part_assets": {
+      "type": "object",
+      "required": [
+        "in_short",
+        "visuals"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "in_short": {
+          "$ref": "#/$defs/inShort"
+        },
+        "visuals": {
+          "type": "object",
+          "required": [
+            "key_figures",
+            "category_distribution",
+            "discovery_matrix"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "key_figures": {
+              "type": "object",
+              "required": [
+                "subdomains",
+                "services",
+                "service_categories",
+                "sensitive_services",
+                "ips",
+                "internal_ips",
+                "external_ips"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "subdomains": {
+                  "$ref": "#/$defs/count"
+                },
+                "services": {
+                  "$ref": "#/$defs/count"
+                },
+                "service_categories": {
+                  "$ref": "#/$defs/count"
+                },
+                "sensitive_services": {
+                  "$ref": "#/$defs/count"
+                },
+                "ips": {
+                  "$ref": "#/$defs/count"
+                },
+                "internal_ips": {
+                  "$ref": "#/$defs/count"
+                },
+                "external_ips": {
+                  "$ref": "#/$defs/count"
+                }
+              }
+            },
+            "category_distribution": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/categoryShareService"
+              }
+            },
+            "discovery_matrix": {
+              "type": "array",
+              "maxItems": 10,
+              "items": {
+                "type": "object",
+                "required": [
+                  "rank",
+                  "exposure_id",
+                  "host",
+                  "port",
+                  "ips",
+                  "category",
+                  "nature",
+                  "business_impact"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "rank": {
+                    "$ref": "#/$defs/rank"
+                  },
+                  "exposure_id": {
+                    "$ref": "#/$defs/exposureId"
+                  },
+                  "host": {
+                    "$ref": "#/$defs/hostname"
+                  },
+                  "port": {
+                    "$ref": "#/$defs/port"
+                  },
+                  "ips": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/ip"
+                    }
+                  },
+                  "category": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/serviceCategory"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "nature": {
+                    "$ref": "#/$defs/nature"
+                  },
+                  "business_impact": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/severity"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "part_risks": {
+      "type": "object",
+      "required": [
+        "in_short",
+        "visuals"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "in_short": {
+          "$ref": "#/$defs/inShort"
+        },
+        "visuals": {
+          "type": "object",
+          "required": [
+            "priority_matrix",
+            "scenario_cards"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "priority_matrix": {
+              "type": "array",
+              "maxItems": 10,
+              "items": {
+                "type": "object",
+                "required": [
+                  "rank",
+                  "exposure_id",
+                  "host",
+                  "port",
+                  "category",
+                  "severity",
+                  "exploits",
+                  "scenario_count"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "rank": {
+                    "$ref": "#/$defs/rank"
+                  },
+                  "exposure_id": {
+                    "$ref": "#/$defs/exposureId"
+                  },
+                  "host": {
+                    "$ref": "#/$defs/hostname"
+                  },
+                  "port": {
+                    "$ref": "#/$defs/port"
+                  },
+                  "category": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/serviceCategory"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "severity": {
+                    "$ref": "#/$defs/severity"
+                  },
+                  "exploits": {
+                    "$ref": "#/$defs/count"
+                  },
+                  "scenario_count": {
+                    "$ref": "#/$defs/count"
+                  }
+                }
+              }
+            },
+            "scenario_cards": {
+              "type": "array",
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "required": [
+                  "hosts",
+                  "ips",
+                  "ports",
+                  "category",
+                  "severity",
+                  "scenarios"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "hosts": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "$ref": "#/$defs/hostname"
+                    }
+                  },
+                  "ips": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/ip"
+                    }
+                  },
+                  "ports": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "$ref": "#/$defs/port"
+                    }
+                  },
+                  "category": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/serviceCategory"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "severity": {
+                    "$ref": "#/$defs/severity"
+                  },
+                  "scenarios": {
+                    "type": "array",
+                    "maxItems": 3,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "scenario_id",
+                        "cve",
+                        "severity"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "scenario_id": {
+                          "$ref": "#/$defs/scenarioId"
+                        },
+                        "cve": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/cve"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "severity": {
+                          "$ref": "#/$defs/severity"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "part_mitigations": {
+      "type": "object",
+      "required": [
+        "in_short",
+        "visuals"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "in_short": {
+          "$ref": "#/$defs/inShort"
+        },
+        "visuals": {
+          "type": "object",
+          "required": [
+            "type_distribution",
+            "category_distribution",
+            "priority_matrix",
+            "focus"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type_distribution": {
+              "type": "object",
+              "required": [
+                "preventive",
+                "detective",
+                "corrective"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "preventive": {
+                  "$ref": "#/$defs/typeShare"
+                },
+                "detective": {
+                  "$ref": "#/$defs/typeShare"
+                },
+                "corrective": {
+                  "$ref": "#/$defs/typeShare"
+                }
+              }
+            },
+            "category_distribution": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/categoryShareMitigation"
+              }
+            },
+            "priority_matrix": {
+              "type": "array",
+              "maxItems": 10,
+              "items": {
+                "type": "object",
+                "required": [
+                  "rank",
+                  "mitigation_id",
+                  "cve_count",
+                  "priority",
+                  "difficulty"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "rank": {
+                    "$ref": "#/$defs/rank"
+                  },
+                  "mitigation_id": {
+                    "$ref": "#/$defs/mitigationId"
+                  },
+                  "cve_count": {
+                    "$ref": "#/$defs/count"
+                  },
+                  "priority": {
+                    "$ref": "#/$defs/severity"
+                  },
+                  "difficulty": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/difficulty"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "focus": {
+              "$ref": "#/$defs/focusList"
+            }
+          }
+        }
+      }
+    },
+    "typeShare": {
+      "type": "object",
+      "required": [
+        "count",
+        "percentage"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "percentage": {
+          "$ref": "#/$defs/percentage"
+        }
+      }
+    },
+    "exposure": {
+      "type": "object",
+      "required": [
+        "id",
+        "host",
+        "port",
+        "ips",
+        "hosting",
+        "cdn_provider",
+        "service",
+        "category",
+        "nature",
+        "business_impact",
+        "qualification",
+        "cves",
+        "scenario_ids",
+        "mitigation_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/exposureId"
+        },
+        "host": {
+          "$ref": "#/$defs/hostname"
+        },
+        "port": {
+          "$ref": "#/$defs/port"
+        },
+        "ips": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ip"
+          },
+          "uniqueItems": true
+        },
+        "hosting": {
+          "enum": [
+            "direct",
+            "cdn"
+          ]
+        },
+        "cdn_provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "service": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9][a-z0-9_./+-]{0,31}$"
+        },
+        "category": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/serviceCategory"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nature": {
+          "$ref": "#/$defs/nature"
+        },
+        "business_impact": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/severity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "qualification": {
+          "$ref": "#/$defs/severity"
+        },
+        "cves": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exposureCve"
+          }
+        },
+        "scenario_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/scenarioId"
+          },
+          "uniqueItems": true
+        },
+        "mitigation_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mitigationId"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "exposureCve": {
+      "type": "object",
+      "required": [
+        "cve",
+        "year",
+        "qualification",
+        "cvss",
+        "epss",
+        "exploits_count",
+        "exploit_references",
+        "kev",
+        "scenario_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "cve": {
+          "$ref": "#/$defs/cve"
+        },
+        "year": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1999
+        },
+        "qualification": {
+          "$ref": "#/$defs/severity"
+        },
+        "cvss": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "score",
+                "version",
+                "vector"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "score": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 10
+                },
+                "version": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^\\d\\.\\d$"
+                },
+                "vector": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "epss": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "exploits_count": {
+          "$ref": "#/$defs/count"
+        },
+        "exploit_references": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^https://"
+          },
+          "uniqueItems": true
+        },
+        "kev": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "listed"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "listed": {
+                  "const": false
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "listed",
+                "date_added",
+                "ransomware"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "listed": {
+                  "const": true
+                },
+                "date_added": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "ransomware": {
+                  "type": "boolean"
+                }
+              }
+            }
+          ]
+        },
+        "scenario_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/scenarioId"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "cve",
+        "reconnaissance",
+        "exploitation",
+        "impact",
+        "tags"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/scenarioId"
+        },
+        "kind": {
+          "enum": [
+            "cve",
+            "port"
+          ]
+        },
+        "reconnaissance": {
+          "$ref": "#/$defs/text"
+        },
+        "exploitation": {
+          "$ref": "#/$defs/text"
+        },
+        "impact": {
+          "$ref": "#/$defs/text"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$"
+          },
+          "uniqueItems": true
+        },
+        "cve": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/cve"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "CVE du scénario (partie de son identité, comme dans R3) ; null pour un scénario de service."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "port"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "cve": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "cve": {
+                "$ref": "#/$defs/cve"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "mitigation": {
+      "type": "object",
+      "required": [
+        "id",
+        "rank",
+        "score",
+        "priority",
+        "type",
+        "category",
+        "difficulty",
+        "duration",
+        "organizational",
+        "technical",
+        "kpi",
+        "coverage"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/mitigationId"
+        },
+        "rank": {
+          "$ref": "#/$defs/rank"
+        },
+        "score": {
+          "type": "number"
+        },
+        "priority": {
+          "$ref": "#/$defs/severity"
+        },
+        "type": {
+          "$ref": "#/$defs/mitigationType"
+        },
+        "category": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/mitigationCategory"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "difficulty": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/difficulty"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "duration": {
+          "$ref": "#/$defs/duration"
+        },
+        "organizational": {
+          "$ref": "#/$defs/text"
+        },
+        "technical": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/text"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kpi": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/text"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coverage": {
+          "type": "object",
+          "required": [
+            "exposures",
+            "cves"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "exposures": {
+              "$ref": "#/$defs/count"
+            },
+            "cves": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/cve"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "actorMotivation": {
+      "type": "object",
+      "required": [
+        "motivation",
+        "motivation_level",
+        "resources_level",
+        "relevance"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "motivation": {
+          "$ref": "#/$defs/motivationCode"
+        },
+        "motivation_level": {
+          "enum": [
+            "high",
+            "quite",
+            "poor",
+            "very_low"
+          ]
+        },
+        "resources_level": {
+          "enum": [
+            "unlimited",
+            "important",
+            "significant",
+            "limited"
+          ]
+        },
+        "relevance": {
+          "enum": [
+            "very_relevant",
+            "quite_relevant",
+            "moderately_relevant",
+            "not_really_relevant",
+            "not_relevant"
+          ]
+        }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "required": [
+        "id",
+        "score",
+        "level",
+        "motivations"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/actorCode"
+        },
+        "score": {
+          "type": "number"
+        },
+        "level": {
+          "$ref": "#/$defs/severity"
+        },
+        "motivations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/actorMotivation"
+          }
+        }
+      }
+    },
+    "serviceCategory": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "examples": [
+        "admin_access",
+        "specialized_services",
+        "database",
+        "system_monitoring",
+        "messaging",
+        "communication",
+        "network_infrastructure",
+        "distributed_storage",
+        "graphical_interface",
+        "system_services",
+        "file_transfer",
+        "authentication",
+        "data_services",
+        "web_application",
+        "file_sharing",
+        "vpn",
+        "source_control",
+        "multimedia",
+        "development",
+        "backup",
+        "p2p",
+        "business_services",
+        "printing",
+        "proxy"
+      ],
+      "description": "Code serviceCategory. Vocabulaire extensible (fichiers de Parameters/) : un code inconnu reste valide."
+    },
+    "mitigationCategory": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "examples": [
+        "access_compromise",
+        "specific_services",
+        "authentication_access",
+        "impact_consequences",
+        "configuration_management",
+        "protocols_communications",
+        "technical_vulnerabilities",
+        "development_applications",
+        "containers_orchestration",
+        "devices_printing",
+        "data_archives",
+        "monitoring_detection",
+        "social_engineering_email",
+        "reconnaissance_enumeration",
+        "advanced_identity_management",
+        "advanced_configuration"
+      ],
+      "description": "Code mitigationCategory. Vocabulaire extensible (fichiers de Parameters/) : un code inconnu reste valide."
+    },
+    "qualitativeLevel": {
+      "enum": [
+        "very_high",
+        "high",
+        "medium_to_high",
+        "medium",
+        "moderate",
+        "low_to_medium",
+        "low",
+        "variable"
+      ]
+    },
+    "resourcesLevel": {
+      "enum": [
+        "unlimited",
+        "important",
+        "significant",
+        "limited",
+        "variable"
+      ]
+    },
+    "duration": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "min",
+            "max",
+            "unit"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "min": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "unit": {
+              "enum": [
+                "week",
+                "month"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "categoryShareService": {
+      "type": "object",
+      "required": [
+        "category",
+        "count",
+        "percentage"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/serviceCategory"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "percentage": {
+          "$ref": "#/$defs/percentage"
+        }
+      }
+    },
+    "categoryShareMitigation": {
+      "type": "object",
+      "required": [
+        "category",
+        "count",
+        "percentage"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/mitigationCategory"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "percentage": {
+          "$ref": "#/$defs/percentage"
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "required": [
+        "host",
+        "root",
+        "resolved",
+        "ips",
+        "exposure_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/hostname"
+        },
+        "root": {
+          "type": "boolean"
+        },
+        "resolved": {
+          "type": "boolean"
+        },
+        "ips": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ip"
+          },
+          "uniqueItems": true
+        },
+        "exposure_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exposureId"
+          },
+          "uniqueItems": true
+        }
+      },
+      "if": {
+        "properties": {
+          "resolved": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "ips": {
+            "maxItems": 0
+          },
+          "exposure_ids": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "ips": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "status",
+        "retrieved_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "unavailable",
+            "skipped"
+          ]
+        },
+        "retrieved_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "from_cache": {
+          "type": "boolean"
+        },
+        "errors": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}
