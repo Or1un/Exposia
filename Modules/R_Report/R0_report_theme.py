@@ -281,3 +281,43 @@ def get_exposia_css():
     """CSS du nouveau système Exposia (polices + corps clair). Les modules
     migrés font : report_theme.get_exposia_css() + <CSS spécifique>."""
     return FONT_CSS + "\n" + EXPOSIA_CSS
+
+# --- Textes communs à toutes les parties (FR, EN) ----------------------------
+# Lus avec exposia_i18n.tr(report_theme.T, 'clé') ; langue : EXPOSIA_LANG.
+T = {
+    'doc': ("Rapport d'analyse", "Analysis report"),
+    'in_short': ("En clair", "In brief"),
+    'methodology': ("M&eacute;thodologie", "Methodology"),
+    'rank': ("Rang", "Rank"),
+}
+
+
+def doc_header(org_disp):
+    """En-tête courant de page : marque et « Rapport d'analyse · <organisation> »."""
+    import exposia_i18n
+    return (f'<div class="rh-brand">E<span class="x">x</span>posia</div>\n'
+            f'  <div class="rh-doc">{exposia_i18n.tr(T, "doc")} &middot; {org_disp}</div>')
+
+
+# --- « En clair » : données structurées -> HTML ------------------------------
+# Les parties du rapport décrivent leur encadré « En clair » comme une liste de
+# paragraphes, chacun une liste de segments {"text": …, "strong": True}. La même
+# structure sert au PDF (rendu ci-dessous) et au JSON canonique (R13) : le texte
+# n'est écrit qu'une fois, sans HTML.
+
+def seg(text, strong=False):
+    """Segment d'« En clair » : texte brut (Unicode), en gras si strong."""
+    return {"text": text, "strong": True} if strong else {"text": text}
+
+
+def render_in_short(paragraphs):
+    """Paragraphes de segments -> HTML (<p>, <strong>), valeurs échappées."""
+    from html import escape as _esc
+    out = []
+    for paragraph in paragraphs:
+        parts = []
+        for s in paragraph:
+            text = _esc(s["text"], quote=False)
+            parts.append(f"<strong>{text}</strong>" if s.get("strong") else text)
+        out.append("<p>" + "".join(parts) + "</p>")
+    return "\n    ".join(out)
