@@ -1,0 +1,25 @@
+Code;FR;EN
+admin_access;Accès d'administration;Administrative access
+web_application;Application web;Web application
+authentication;Authentification;Authentication
+database;Base de données;Database
+communication;Communication;Communication
+development;Développement;Development
+source_control;Gestion de code source;Source code management
+network_infrastructure;Infrastructure réseau;Network infrastructure
+graphical_interface;Interface graphique;Graphical interface
+messaging;Messagerie;Messaging
+system_monitoring;Monitoring système;System monitoring
+file_sharing;Partage de fichiers;File sharing
+proxy;Proxy;Proxy
+backup;Sauvegarde;Backup
+p2p;Services P2P;P2P services
+printing;Services d'impression;Printing services
+data_services;Services de données;Data services
+multimedia;Services multimédia;Multimedia services
+business_services;Services métier;Business services
+specialized_services;Services spécialisés;Specialized services
+system_services;Services système;System services
+distributed_storage;Stockage distribué;Distributed storage
+file_transfer;Transfert de fichiers;File transfer
+vpn;VPN;VPN
