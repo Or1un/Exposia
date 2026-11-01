@@ -27,18 +27,72 @@ import os
 import glob
 from datetime import datetime
 from collections import defaultdict, Counter
-from weasyprint import HTML, CSS
-from weasyprint.text.fonts import FontConfiguration
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import exposia_paths  # résolution centralisée des chemins
+import exposia_vocab as vocab  # codes stables (JSON canonique)
 from exposia_ui import Colors, ModernUI  # UI console centralisée
 try:  # thème partagé (report_theme.py ou R0_report_theme.py)
     import report_theme
 except ImportError:
     import R0_report_theme as report_theme
 
+import copy
+import exposia_i18n as i18n  # langue des livrables (EXPOSIA_LANG)
+from exposia_i18n import tr
+
 _NA = ('', '#N/A', 'N/A', 'None', 'nan', 'No data')
+
+# Textes fixes de la synthèse (FR, EN)
+T = {
+    'title_tag': ("Synth&egrave;se globale", "Global summary"),
+    'kicker': ("Synth&egrave;se", "Summary"),
+    'title': ("De la menace &agrave; la mitigation", "From threat to mitigation"),
+    'method': ("""    <p>Notre d&eacute;marche croise quatre volets compl&eacute;mentaires pour vous donner une vision claire et hi&eacute;rarchis&eacute;e de vos risques&nbsp;:</p>
+    <ul>
+      <li><b>Threat Modeling</b> &mdash; identification des <b>attaquants les plus cr&eacute;dibles</b> selon votre profil.</li>
+      <li><b>Asset Discovery</b> &mdash; cartographie de votre <b>p&eacute;rim&egrave;tre expos&eacute;</b> (sous-domaines, services, ports).</li>
+      <li><b>Risk Assessment</b> &mdash; mise en &eacute;vidence des <b>vuln&eacute;rabilit&eacute;s exploitables</b> et des <b>sc&eacute;narios d'attaque types</b>.</li>
+      <li><b>Mitigation Plan</b> &mdash; s&eacute;lection et classement des <b>bonnes pratiques</b> les plus utiles.</li>
+    </ul>
+    <p>Chaque cha&icirc;ne ci-dessous relie une vuln&eacute;rabilit&eacute; prioritaire &agrave; un profil d'attaquant dont les motivations sont compatibles avec les impacts envisag&eacute;s, pour rendre le sc&eacute;nario et la r&eacute;ponse &agrave; y apporter plus concrets.</p>""",
+               """    <p>Our approach combines four complementary strands to give you a clear, prioritised view of your risks:</p>
+    <ul>
+      <li><b>Threat Modeling</b> &mdash; identifying the <b>most credible attackers</b> given your profile.</li>
+      <li><b>Asset Discovery</b> &mdash; mapping your <b>exposed perimeter</b> (subdomains, services, ports).</li>
+      <li><b>Risk Assessment</b> &mdash; highlighting <b>exploitable vulnerabilities</b> and <b>typical attack scenarios</b>.</li>
+      <li><b>Mitigation Plan</b> &mdash; selecting and ranking the most useful <b>good practices</b>.</li>
+    </ul>
+    <p>Each chain below links a priority vulnerability to an attacker profile whose motivations are consistent with the potential impacts, to make the scenario and the response to it more concrete.</p>"""),
+    'chains': ("Cha&icirc;nes de menaces", "Threat chains"),
+    'no_chain': ("Aucune cha&icirc;ne de menace significative identifi&eacute;e.", "No significant threat chain identified."),
+    'focus': ("Focus sur les mesures prioritaires", "Focus on the priority measures"),
+    'no_focus': ("Aucune mesure prioritaire associ&eacute;e.", "No associated priority measure."),
+    'scenario': ("Sc&eacute;nario", "Scenario"),
+    'actor': ("Acteur", "Actor"), 'asset': ("Actif", "Asset"), 'vector': ("Vecteur", "Vector"),
+    'mitigation': ("Mitigation", "Mitigation"),
+    'good_practice': ("Bonne pratique", "Good practice"),
+    'covers_short': ("Couvre {n} vuln.", "Covers {n} vuln."),
+    'no_measure': ("Mesure non définie", "Undefined measure"),
+    'default_impact': ("il peut compromettre votre système d'information", "the attacker can compromise your information system"),
+    'remedy': ("La première mesure consiste à <strong>mettre à jour le logiciel concerné</strong>&nbsp;; "
+               "la mesure <strong>{mid}</strong> (&laquo;&nbsp;{measure}&nbsp;&raquo;) "
+               "contribue à réduire durablement ce type de risque.",
+               "The first measure is to <strong>update the affected software</strong>; "
+               "measure <strong>{mid}</strong> (&ldquo;{measure}&rdquo;) helps durably reduce this type of risk."),
+    'remedy_update': ("La première mesure consiste à <strong>mettre à jour le logiciel concerné</strong>.",
+                      "The first measure is to <strong>update the affected software</strong>."),
+    'narr': ("Un acteur de type <strong>{actor}</strong> "
+             "(motivation&nbsp;: <strong>{motivation}</strong>) cible <strong>{sub}</strong> "
+             "({ip}:{port}). En exploitant la vulnérabilité "
+             "<strong>{cve}</strong> sur votre <strong>{cat}</strong>, {impact}. {remedy}",
+             "A threat actor of the <strong>{actor}</strong> type "
+             "(motivation: <strong>{motivation}</strong>) targets <strong>{sub}</strong> "
+             "({ip}:{port}). By exploiting vulnerability "
+             "<strong>{cve}</strong> on your <strong>{cat}</strong> service, {impact}. {remedy}"),
+}
+SEV_TEXT = {'Critical': ('Critique', 'Critical'), 'High': ('Élevé', 'High'),
+            'Medium': ('Moyen', 'Medium'), 'Low': ('Faible', 'Low')}
 
 # Composante CVSS impactée (H) -> motivations cohérentes, par ordre de préférence.
 IMPACT_TO_MOTIVATIONS = {
@@ -223,7 +277,8 @@ class SynthesisGlobalPDFGenerator:
                 "Very relevant": 5, "Quite relevant": 4, "Moderately relevant": 3,
                 "Not really relevant": 2, "Not relevant": 0,
                 "High": 5, "Quite": 4, "Poor": 2, "Very low": 1,
-                "Unlimited": 5, "Significant": 4, "Important": 3, "Limited": 2
+                # Même échelle que D3 et R1 : Important (4) au-dessus de Significant (3).
+                "Unlimited": 5, "Important": 4, "Significant": 3, "Limited": 2
             }
             return conversion.get(value, 0)
 
@@ -249,7 +304,11 @@ class SynthesisGlobalPDFGenerator:
 
                 individual_score = motivation_score * resources_score * probability_score
 
-                if individual_score > max_score:
+                # À score égal, ordre de la matrice M2 (même règle que R1).
+                if individual_score > max_score or (
+                        best_motivation is not None and individual_score == max_score
+                        and vocab.rank('motivation', motivation['Motivation'])
+                        < vocab.rank('motivation', best_motivation['Motivation'])):
                     max_score = individual_score
                     best_motivation = motivation
 
@@ -275,7 +334,8 @@ class SynthesisGlobalPDFGenerator:
             })
 
         # Trier par score décroissant
-        processed_actors.sort(key=lambda x: x['rank_score'], reverse=True)
+        # À score égal, ordre de la matrice M1 (même règle que R1).
+        processed_actors.sort(key=lambda x: (-(x['rank_score'] or 0), vocab.rank('actor', x['actor'])))
 
         return processed_actors
 
@@ -599,6 +659,85 @@ class SynthesisGlobalPDFGenerator:
         ranked = sorted(mitigation_data, key=lambda m: -_float(m.get('final_score')))
         return ranked[:limit]
 
+    # ------------------------------------------------------------------
+    # Données de la partie (source unique du PDF et du JSON canonique)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def build_in_short(stats):
+        """Encadré « En clair » de la synthèse, formulé pour les cas vides (segments)."""
+        seg = report_theme.seg
+        n_act, n_cves = stats['total_actors'], stats['total_cves']
+        n_svc, n_mit = stats['total_services'], stats['total_mitigations']
+        if i18n.is_en():
+            pl = i18n.plural
+            p = [seg("Our analysis reveals "), seg(f"{n_act} attacker {pl(n_act, 'profile')}", True)]
+            if n_cves:
+                p += [seg(" likely to exploit "), seg(f"{n_cves} {pl(n_cves, 'vulnerability', 'vulnerabilities')}", True),
+                      seg(" on "), seg(f"{n_svc} exposed {pl(n_svc, 'service')}", True),
+                      seg(". The priority is "), seg("updating the affected software", True), seg(".")]
+            else:
+                p += [seg(" likely to target your organization and "), seg(f"{n_svc} exposed {pl(n_svc, 'service')}", True),
+                      seg(", with no known vulnerability identified. The challenge is to "),
+                      seg("maintain this level", True),
+                      seg(": regular updates and exposed services limited to what is strictly necessary.")]
+            if n_mit:
+                p += [seg(" In addition, "), seg(f"{n_mit} {pl(n_mit, 'measure')}", True),
+                      seg(f" {'makes' if n_mit == 1 else 'make'} up a roadmap to durably reduce exposure and focus "
+                          "efforts where they create the most value.")]
+            return {'paragraphs': [p], 'facts': {'actors': n_act, 'cves': n_cves, 'services': n_svc, 'mitigations': n_mit}}
+        s_act = 's' if n_act > 1 else ''
+        s_svc = 's' if n_svc > 1 else ''
+        p = [seg("Notre analyse révèle "), seg(f"{n_act} profil{s_act} d'attaque", True)]
+        if n_cves:
+            p += [seg(f" susceptible{s_act} d'exploiter "), seg(f"{n_cves} vulnérabilité{'s' if n_cves > 1 else ''}", True),
+                  seg(" sur "), seg(f"{n_svc} service{s_svc}", True),
+                  seg(f" exposé{s_svc}. La priorité est la "), seg("mise à jour des logiciels concernés", True), seg(".")]
+        else:
+            p += [seg(f" susceptible{s_act} de cibler votre organisation et "), seg(f"{n_svc} service{s_svc}", True),
+                  seg(f" exposé{s_svc}, sans vulnérabilité connue identifiée. L'enjeu est de "),
+                  seg("maintenir ce niveau", True),
+                  seg("\u00a0: mises à jour régulières et services exposés limités au strict nécessaire.")]
+        if n_mit:
+            p += [seg(" En complément, "), seg(f"{n_mit} mesure{'s' if n_mit > 1 else ''}", True),
+                  seg(f" {'composent' if n_mit > 1 else 'compose'} une feuille de route pour réduire durablement "
+                      "l'exposition et concentrer les efforts là où ils créent le plus de valeur.")]
+        facts = {'actors': n_act, 'cves': n_cves, 'services': n_svc, 'mitigations': n_mit}
+        return {'paragraphs': [p], 'facts': facts}
+
+    def build_data(self, attack_paths, stats, mitigation_data):
+        """Bloc parts.synthesis du JSON canonique : « En clair », chaînes de menaces, focus (codes)."""
+        def _port(value):
+            try:
+                return int(float(value))
+            except (TypeError, ValueError):
+                return None
+        chains = [{
+            'rank': path['rank'],
+            'severity': vocab.code('severity', path['vulnerability']['qualification']) or 'low',
+            'actor': vocab.code('actor', path['actor']['name']),
+            'motivation': vocab.code('motivation', path['actor']['motivation']),
+            'exposure_id': f"{path['asset']['subdomain']}:{_port(path['asset']['port'])}",
+            'cve': path['cve'],
+            'impact': i18n.text(path['vulnerability']['impact']) if path['vulnerability']['impact'] else None,
+            'mitigation_id': None if path['mitigation']['id'] in ('', 'N/A') else path['mitigation']['id'],
+        } for path in attack_paths]
+        return {'in_short': self.build_in_short(stats),
+                'visuals': {'threat_chains': chains,
+                            'focus': [{'mitigation_id': m.get('mitigation_id', '')}
+                                      for m in self.priority_measures(mitigation_data)]}}
+
+    def compute(self):
+        """Calculs de la synthèse depuis le dossier courant : (attack_paths, stats, mitigation_data)."""
+        threat_file, exposia_file, mitigation_file = self.find_csv_files()
+        threat_actors = self.process_threat_actors(self.load_threat_data(threat_file))
+        exposia_vulns = self.process_exposia_vulnerabilities(self.load_exposia_data(exposia_file))
+        mitigation_data = self.load_mitigation_data(mitigation_file)
+        cves = [vuln.get('Vulnerability (CVE)', '') for vuln in exposia_vulns['raw_data']]
+        cve_mitigations = self.match_mitigations_to_cves(mitigation_data, cves)
+        attack_paths = self.create_attack_paths(threat_actors, exposia_vulns['raw_data'], cve_mitigations)
+        stats = self.calculate_statistics(threat_actors, exposia_vulns, mitigation_data, attack_paths)
+        return attack_paths, stats, mitigation_data
+
     def generate_html_content(self, attack_paths, stats, mitigation_data):
         """Génère le contenu HTML de la synthèse (système de design Exposia)."""
         try:
@@ -608,47 +747,49 @@ class SynthesisGlobalPDFGenerator:
         org_disp = esc(org.capitalize()) if org else "—"
 
         sev_map = {'Critical': 'sev-critical', 'High': 'sev-high', 'Medium': 'sev-medium', 'Low': 'sev-low'}
-        sev_disp = {'Critical': 'Critique', 'High': 'Élevé', 'Medium': 'Moyen', 'Low': 'Faible'}
+        sev_disp = {k: i18n.pick(*v) for k, v in SEV_TEXT.items()}
 
         # Chaînes de menaces
         chains_html = ""
         for i, path in enumerate(attack_paths):
+            if i18n.is_en():  # libellés et récits dans la langue du run, avant échappement
+                path = copy.deepcopy(path)
+                path['actor']['name'] = i18n.label('actor', path['actor']['name'])
+                path['actor']['motivation'] = i18n.label('motivation', path['actor']['motivation'])
+                path['vulnerability']['category'] = i18n.label('service_category', path['vulnerability']['category'])
+                if path['vulnerability']['impact']:
+                    path['vulnerability']['impact'] = i18n.text(path['vulnerability']['impact'])
+                measure = path['mitigation']['measure']
+                path['mitigation']['measure'] = tr(T, 'no_measure') if measure == 'Mesure non définie' else i18n.text(measure)
             path = self._esc_deep(path)
             mid = path['mitigation']['id']
             q = path['vulnerability']['qualification']
             sev_cls = sev_map.get(q, 'sev-low')
             sev_txt = sev_disp.get(q, q)
             impact = path['vulnerability']['impact']
-            impact_txt = self._lower_first(impact) if impact else "il peut compromettre votre système d'information"
+            impact_txt = self._lower_first(impact) if impact else tr(T, 'default_impact')
             if mid != 'N/A':
-                remedy = (
-                    f"La première mesure consiste à <strong>mettre à jour le logiciel concerné</strong>&nbsp;; "
-                    f"la mesure <strong>{mid}</strong> (&laquo;&nbsp;{path['mitigation']['measure']}&nbsp;&raquo;) "
-                    f"contribue à réduire durablement ce type de risque."
-                )
+                remedy = tr(T, 'remedy', mid=mid, measure=path['mitigation']['measure'])
             else:
-                remedy = "La première mesure consiste à <strong>mettre à jour le logiciel concerné</strong>."
-            narr = (
-                f"Un acteur de type <strong>{path['actor']['name']}</strong> "
-                f"(motivation&nbsp;: <strong>{path['actor']['motivation'].lower()}</strong>) cible <strong>{path['asset']['subdomain']}</strong> "
-                f"({path['asset']['ip']}:{path['asset']['port']}). En exploitant la vulnérabilité "
-                f"<strong>{path['vulnerability']['cve']}</strong> sur votre <strong>{path['vulnerability']['category']}</strong>, "
-                f"{impact_txt}. {remedy}"
-            )
+                remedy = tr(T, 'remedy_update')
+            narr = tr(T, 'narr', actor=path['actor']['name'], motivation=path['actor']['motivation'].lower(),
+                      sub=path['asset']['subdomain'], ip=path['asset']['ip'], port=path['asset']['port'],
+                      cve=path['vulnerability']['cve'], cat=path['vulnerability']['category'],
+                      impact=impact_txt, remedy=remedy)
             cov = path['mitigation']['cve_count']
-            cov_txt = f"Couvre {cov} vuln." if str(cov).strip() not in ('', '0') else "Bonne pratique"
+            cov_txt = tr(T, 'covers_short', n=cov) if str(cov).strip() not in ('', '0') else tr(T, 'good_practice')
             chains_html += f"""
   <div class="chain-card">
-    <div class="chain-head"><span class="sc">Sc&eacute;nario {i + 1}</span><span class="sev-badge {sev_cls}">{sev_txt}</span></div>
+    <div class="chain-head"><span class="sc">{tr(T, 'scenario')} {i + 1}</span><span class="sev-badge {sev_cls}">{sev_txt}</span></div>
     <div class="chain-body">
       <div class="chain">
-        <div class="chain-el"><div class="cl">Acteur</div><div class="cm">{path['actor']['name']}</div><div class="cd">{path['actor']['motivation']}</div></div>
+        <div class="chain-el"><div class="cl">{tr(T, 'actor')}</div><div class="cm">{path['actor']['name']}</div><div class="cd">{path['actor']['motivation']}</div></div>
         <div class="chain-arrow">&rarr;</div>
-        <div class="chain-el"><div class="cl">Actif</div><div class="cm">{path['asset']['subdomain']}</div><div class="cd">{path['asset']['ip']}:{path['asset']['port']}</div></div>
+        <div class="chain-el"><div class="cl">{tr(T, 'asset')}</div><div class="cm">{path['asset']['subdomain']}</div><div class="cd">{path['asset']['ip']}:{path['asset']['port']}</div></div>
         <div class="chain-arrow">&rarr;</div>
-        <div class="chain-el"><div class="cl">Vecteur</div><div class="cm">{path['vulnerability']['category']}</div><div class="cd">{path['vulnerability']['cve']}</div></div>
+        <div class="chain-el"><div class="cl">{tr(T, 'vector')}</div><div class="cm">{path['vulnerability']['category']}</div><div class="cd">{path['vulnerability']['cve']}</div></div>
         <div class="chain-arrow">&rarr;</div>
-        <div class="chain-el"><div class="cl">Mitigation</div><div class="cm">{mid}</div><div class="cd">{cov_txt}</div></div>
+        <div class="chain-el"><div class="cl">{tr(T, 'mitigation')}</div><div class="cm">{mid}</div><div class="cd">{cov_txt}</div></div>
       </div>
       <p class="chain-narr">{narr}</p>
     </div>
@@ -658,80 +799,50 @@ class SynthesisGlobalPDFGenerator:
         focus_html = ""
         for measure in self.priority_measures(mitigation_data):
             measure_id = esc(str(measure.get('mitigation_id', '')))
-            measure_text = esc(str(measure.get('organizational_measure', 'Mesure non définie')))
+            measure_text = esc(i18n.text(measure.get('organizational_measure', tr(T, 'no_measure'))))
             try:
                 n_cve = int(_float(measure.get('cve_count'), 0))
             except (TypeError, ValueError):
                 n_cve = 0
-            if n_cve > 0:
+            if n_cve > 0 and i18n.is_en():
+                cov_txt = f"Covers {n_cve} {i18n.plural(n_cve, 'vulnerability', 'vulnerabilities')}"
+            elif n_cve > 0:
                 cov_txt = f"Couvre {n_cve} vuln&eacute;rabilit&eacute;{'s' if n_cve > 1 else ''}"
             else:
-                cov_txt = "Bonne pratique"
+                cov_txt = tr(T, 'good_practice')
             focus_html += f"""
   <div class="fm-card">
     <div class="fm-head"><span class="fid">{measure_id}</span><span class="fcov">{cov_txt}</span></div>
     <div class="fm-body">{measure_text}</div>
   </div>"""
 
-        # Encadré « En clair » : formulation adaptée aux cas vides.
-        n_act, n_cves = stats['total_actors'], stats['total_cves']
-        n_svc, n_mit = stats['total_services'], stats['total_mitigations']
-        s_act = 's' if n_act > 1 else ''
-        s_svc = 's' if n_svc > 1 else ''
-        if n_cves:
-            synthesis_callout = (
-                f"Notre analyse r&eacute;v&egrave;le <strong>{n_act} profil{s_act} d'attaque</strong> susceptible{s_act} "
-                f"d'exploiter <strong>{n_cves} vuln&eacute;rabilit&eacute;{'s' if n_cves > 1 else ''}</strong> sur "
-                f"<strong>{n_svc} service{s_svc}</strong> expos&eacute;{s_svc}. La priorit&eacute; est la "
-                f"<strong>mise &agrave; jour des logiciels concern&eacute;s</strong>."
-            )
-        else:
-            synthesis_callout = (
-                f"Notre analyse r&eacute;v&egrave;le <strong>{n_act} profil{s_act} d'attaque</strong> susceptible{s_act} "
-                f"de cibler votre organisation et <strong>{n_svc} service{s_svc}</strong> expos&eacute;{s_svc}, sans "
-                f"vuln&eacute;rabilit&eacute; connue identifi&eacute;e. L'enjeu est de <strong>maintenir ce niveau</strong>&nbsp;: "
-                f"mises &agrave; jour r&eacute;guli&egrave;res et services expos&eacute;s limit&eacute;s au strict n&eacute;cessaire."
-            )
-        if n_mit:
-            synthesis_callout += (
-                f" En compl&eacute;ment, <strong>{n_mit} mesure{'s' if n_mit > 1 else ''}</strong> "
-                f"{'composent' if n_mit > 1 else 'compose'} une feuille de route pour r&eacute;duire durablement l'exposition et concentrer les efforts "
-                f"l&agrave; o&ugrave; ils cr&eacute;ent le plus de valeur."
-            )
+        in_short = self.build_in_short(stats)
 
         html = f"""<!DOCTYPE html>
-<html lang="fr">
-<head><meta charset="UTF-8"><title>Synth&egrave;se globale</title></head>
+<html lang="{i18n.lang()}">
+<head><meta charset="UTF-8"><title>{tr(T, 'title_tag')}</title></head>
 <body>
-  <div class="rh-brand">E<span class="x">x</span>posia</div>
-  <div class="rh-doc">Rapport d'analyse &middot; {org_disp}</div>
+  {report_theme.doc_header(org_disp)}
 
-  <div class="kicker">Synth&egrave;se</div>
-  <div class="part-title">De la menace &agrave; la mitigation</div>
+  <div class="kicker">{tr(T, 'kicker')}</div>
+  <div class="part-title">{tr(T, 'title')}</div>
   <div class="rule"></div>
 
   <div class="callout">
-    <div class="ttl">En clair</div>
-    <p>{synthesis_callout}</p>
+    <div class="ttl">{tr(report_theme.T, 'in_short')}</div>
+    {report_theme.render_in_short(in_short['paragraphs'])}
   </div>
 
-  <div class="xsection"><span class="t">M&eacute;thodologie</span></div>
+  <div class="xsection"><span class="t">{tr(report_theme.T, 'methodology')}</span></div>
   <div class="prose">
-    <p>Notre d&eacute;marche croise quatre volets compl&eacute;mentaires pour vous donner une vision claire et hi&eacute;rarchis&eacute;e de vos risques&nbsp;:</p>
-    <ul>
-      <li><b>Threat Modeling</b> &mdash; identification des <b>attaquants les plus cr&eacute;dibles</b> selon votre profil.</li>
-      <li><b>Asset Discovery</b> &mdash; cartographie de votre <b>p&eacute;rim&egrave;tre expos&eacute;</b> (sous-domaines, services, ports).</li>
-      <li><b>Risk Assessment</b> &mdash; mise en &eacute;vidence des <b>vuln&eacute;rabilit&eacute;s exploitables</b> et des <b>sc&eacute;narios d'attaque types</b>.</li>
-      <li><b>Mitigation Plan</b> &mdash; s&eacute;lection et classement des <b>bonnes pratiques</b> les plus utiles.</li>
-    </ul>
-    <p>Chaque cha&icirc;ne ci-dessous relie une vuln&eacute;rabilit&eacute; prioritaire &agrave; un profil d'attaquant dont les motivations sont compatibles avec les impacts envisag&eacute;s, pour rendre le sc&eacute;nario et la r&eacute;ponse &agrave; y apporter plus concrets.</p>
+{tr(T, 'method')}
   </div>
 
-  <div class="xsection" style="page-break-before: always;"><span class="t">Cha&icirc;nes de menaces</span></div>
-  {chains_html if chains_html else '<p class="prose" style="color:#8A90AC;font-style:italic;">Aucune cha&icirc;ne de menace significative identifi&eacute;e.</p>'}
+  <div class="xsection" style="page-break-before: always;"><span class="t">{tr(T, 'chains')}</span></div>
+  {chains_html if chains_html else '<p class="prose" style="color:#8A90AC;font-style:italic;">' + tr(T, 'no_chain') + '</p>'}
 
-  <div class="xsection"><span class="t">Focus sur les mesures prioritaires</span></div>
-  {focus_html if focus_html else '<p class="prose" style="color:#8A90AC;font-style:italic;">Aucune mesure prioritaire associ&eacute;e.</p>'}
+  <div class="xsection"><span class="t">{tr(T, 'focus')}</span></div>
+  {focus_html if focus_html else '<p class="prose" style="color:#8A90AC;font-style:italic;">' + tr(T, 'no_focus') + '</p>'}
 </body>
 </html>"""
         return html
@@ -739,6 +850,8 @@ class SynthesisGlobalPDFGenerator:
     def generate_pdf_report(self, attack_paths, stats, mitigation_data):
         """Génère le rapport PDF avec WeasyPrint"""
 
+        from weasyprint import HTML, CSS  # PDF seulement : build_data reste importable sans WeasyPrint
+        from weasyprint.text.fonts import FontConfiguration
         try:
             # Génération du contenu HTML
             html_content = self.generate_html_content(attack_paths, stats, mitigation_data)
@@ -779,29 +892,10 @@ class SynthesisGlobalPDFGenerator:
                 print("   pip install weasyprint")
                 raise ImportError("WeasyPrint requis pour la génération PDF")
 
-            # 1. Détection des fichiers CSV
-            threat_file, exposia_file, mitigation_file = self.find_csv_files()
+            # 1. Calculs (mêmes données que le JSON canonique)
+            attack_paths, stats, mitigation_data = self.compute()
 
-            # 2. Chargement des données
-            threat_data = self.load_threat_data(threat_file)
-            exposia_data = self.load_exposia_data(exposia_file)
-            mitigation_data = self.load_mitigation_data(mitigation_file)
-
-            # 3. Traitement des données
-            threat_actors = self.process_threat_actors(threat_data)
-            exposia_vulns = self.process_exposia_vulnerabilities(exposia_data)
-
-            # 4. Association CVE-Mitigations
-            cves = [vuln.get('Vulnerability (CVE)', '') for vuln in exposia_vulns['raw_data']]
-            cve_mitigations = self.match_mitigations_to_cves(mitigation_data, cves)
-
-            # 5. Création des chemins d'attaque
-            attack_paths = self.create_attack_paths(threat_actors, exposia_vulns['raw_data'], cve_mitigations)
-
-            # 6. Calcul des statistiques
-            stats = self.calculate_statistics(threat_actors, exposia_vulns, mitigation_data, attack_paths)
-
-            # 7. Génération du PDF
+            # 2. Génération du PDF
             pdf_filename = self.generate_pdf_report(attack_paths, stats, mitigation_data)
 
 
@@ -828,3 +922,13 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def build_synthesis_data(data_dir='.'):
+    """parts.synthesis du JSON canonique, calculé depuis le dossier data/ d'une campagne."""
+    cwd = os.getcwd()
+    try:
+        os.chdir(data_dir)
+        generator = SynthesisGlobalPDFGenerator()
+        return generator.build_data(*generator.compute())
+    finally:
+        os.chdir(cwd)
