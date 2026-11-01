@@ -5,6 +5,8 @@ import exposia_paths  # résolution centralisée des chemins
 import exposia_ui  # UI console centralisée (Colors, ModernUI)
 from exposia_ui import Colors, ModernUI
 import exposia_config  # clés API (config.yaml à la racine du projet)
+import exposia_scoring as scoring  # poids, seuils et planchers de qualification (source unique)
+import exposia_events  # événements de progression (--events), sans effet sinon
 import csv
 import json
 import re
@@ -207,10 +209,69 @@ class CVEAnalyzer:
 
         return base_criticite
 
+
+# --- Événements --events : instantanés et compteurs consolidés -------------------
+
+def _snap_num(value):
+    """Nombre d'un instantané (None si absent)."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if number != number else number
+
+
+def consolidated_counts(report):
+    """
+    Chiffres après consolidation (frontaux CDN écartés), avec les définitions du
+    rapport (R2, R3) : ce sont ceux de summary.counts dans le JSON canonique.
+    """
+    na = {'', '#n/a', 'n/a', 'nan', 'none', 'no data', 'no ip found'}
+
+    def ok(value):
+        return str(value if value is not None else '').strip().lower() not in na
+
+    def port(value):
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None
+
+    rows = report.to_dict('records')
+    root = next((str(r.get('Domain')).strip() for r in rows if ok(r.get('Domain'))), '')
+    exploits = set()
+    for r in rows:
+        for ref in str(r.get('Exploits', '') or '').split(','):
+            ref = ref.strip()
+            if ok(ref) and ref != 'No unique public exploit found':
+                exploits.add(ref)
+    return {
+        'subdomains': len({str(r['Subdomain']).strip() for r in rows
+                           if ok(r.get('Subdomain')) and str(r['Subdomain']).strip() != root}),
+        'ips': len({str(r['IP Address']).strip() for r in rows if ok(r.get('IP Address'))}),
+        'services': len({(str(r['IP Address']).strip(), port(r.get('Port'))) for r in rows
+                         if ok(r.get('IP Address')) and port(r.get('Port')) is not None}),
+        'cves': len({str(r['Vulnerability (CVE)']).strip() for r in rows if ok(r.get('Vulnerability (CVE)'))}),
+        'exploits': len(exploits),
+    }
+
+
 class SubdomainScanner:
     EPSS_API_URL = "https://api.first.org/data/v1/epss?cve={cve_id}"
     GITHUB_API_URL = "https://poc-in-github.motikan2010.net/api/v1/"
     EXPLOITDB_URL = "https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv?ref_type=heads"
+    # Catalogue CISA des vulnérabilités exploitées (KEV) : flux officiel, puis le
+    # miroir publié par la CISA sur GitHub si le premier ne répond pas.
+    KEV_URLS = (
+        "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+        "https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json",
+    )
+    SOURCE_NAMES = ("crtsh", "certspotter", "dns", "shodan", "nvd", "epss",
+                    "exploitdb", "poc_in_github", "kev")
+    KEV_CACHE_FILE = "kev_cache.json"   # dans data/ : instantané utilisé par l'analyse
+    KEV_CACHE_TTL = 24 * 3600           # le catalogue est mis à jour au plus quelques fois par jour
+    _CVE_ID_RE = re.compile(r'^CVE-\d{4}-\d{4,7}$')
+    _DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 
     # Critères de classification interne/externe (partagés par toutes les méthodes)
     INTERNAL_SUBDOMAIN_KEYWORDS = ['admin', 'dev', 'test', 'internal', 'intranet', 'staging', 'priv', 'private']
@@ -235,8 +296,9 @@ class SubdomainScanner:
     # est conditionné au CVSS pour ne pas porter en High une faille mineure dotée
     # d'un simple PoC. Règles lues dans l'ordre : (CVSS minimal, plancher) ; un
     # CVSS inconnu vaut 0. Une liste vide désactive le plancher.
-    EXPLOIT_FLOOR_RULES = ((7.0, 'High'), (0.0, 'Medium'))
-    _QUALIFICATION_ORDER = ['Low', 'Medium', 'High', 'Critical']
+    # Valeurs : Modules/exposia_scoring.py (partagées avec les rapports et le digest).
+    EXPLOIT_FLOOR_RULES = scoring.EXPLOIT_FLOOR_RULES
+    _QUALIFICATION_ORDER = list(scoring.QUALIFICATION_ORDER)
 
     # CDN : derrière un CDN, les IP résolues sont celles des frontaux du
     # fournisseur, partagées par tous ses clients. Les ports qu'ils ouvrent
@@ -257,6 +319,9 @@ class SubdomainScanner:
         "Exploits": "#N/A",
         "CVSS_Version": "#N/A",
         "CVSS_Vector": "#N/A",
+        "KEV": "#N/A",
+        "KEV Date Added": "#N/A",
+        "KEV Ransomware": "#N/A",
     }
 
     def __init__(self, domain, nvd_api_key=None):
@@ -269,9 +334,19 @@ class SubdomainScanner:
         # Index ExploitDB {cve_id: [exploit_ids]} chargé paresseusement une seule fois.
         # None = pas encore tenté ; {} = chargé (éventuellement vide / échec).
         self._exploitdb_index = None
+        # Index KEV {cve_id: (date d'ajout, usage rançongiciel)}, chargé une fois.
+        # None = pas encore tenté ; {} = indisponible. Statut repris dans run_summary.json.
+        self._kev_index = None
+        self.kev_status = {"status": "skipped"}
+        # Sources interrogées : statut, date de collecte, version du catalogue.
+        # Métadonnées seules (aucun jugement sur les données), pour reproduire
+        # l'analyse et dater les constats. Écrites dans run_summary.json.
+        self.sources = {name: {"status": "skipped", "retrieved_at": None} for name in self.SOURCE_NAMES}
         # Échecs par source d'enrichissement (EPSS, PoC-in-GitHub), pour le bilan
         # affiché en fin de recherche d'exploits.
         self.enrichment_failures = {"EPSS": 0, "PoC-in-GitHub": 0}
+        self._enrichment_started = None   # début des appels EPSS / PoC-in-GitHub
+        self._epss_date = None            # date des scores EPSS (champ « date » de l'API FIRST)
         # Plages et ASN des CDN, ASN par IP (rempli depuis resultats_shodan.csv),
         # et bilan du regroupement.
         self.ip_asn = {}
@@ -404,26 +479,84 @@ class SubdomainScanner:
     CRTSH_MAX_ATTEMPTS = 3            # tentatives par requête crt.sh
     CRTSH_WAITS = [30, 60]            # attentes sur 429 si pas de Retry-After (s)
 
+    @staticmethod
+    def _utc(timestamp=None):
+        """Horodatage UTC ISO 8601 (maintenant, ou d'un mtime de fichier)."""
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() if timestamp is None else timestamp))
+
+    def _set_source(self, name, status, retrieved_at=None, publish=True, **extra):
+        """
+        Met à jour l'entrée d'une source (retrieved_at : maintenant par défaut) et la
+        publie (--events). publish=False : valeur par défaut provisoire, remplacée
+        si l'interrogation aboutit, publiée seulement si elle échoue.
+        """
+        entry = {"status": status, "retrieved_at": retrieved_at or self._utc()}
+        entry.update({k: v for k, v in extra.items() if v is not None})
+        self.sources[name] = entry
+        if publish:
+            exposia_events.emit('source', source=name, **entry)
+
+    def _set_enrichment_source(self, name, started_at, failures, total, **extra):
+        """Statut d'une source interrogée CVE par CVE : ok, partial ou unavailable."""
+        status = "ok" if not failures else ("unavailable" if failures >= total else "partial")
+        self._set_source(name, status, started_at, errors=failures, **extra)
+
+    def _kev_source(self):
+        """Entrée « kev » de run.sources (None tant que le catalogue n'a pas été consulté)."""
+        kev = self.kev_status or {}
+        if kev.get("status") == "ok":
+            return {"status": "ok", "retrieved_at": kev.get("retrieved_at"),
+                    "from_cache": bool(kev.get("from_cache")),
+                    **{k: kev[k] for k in ("catalog_version", "date_released", "entries") if kev.get(k) is not None}}
+        if kev.get("status") == "unavailable":
+            return {"status": "unavailable", "retrieved_at": self._utc()}
+        return None
+
+    @property
+    def kev_status(self):
+        return self._kev_status
+
+    @kev_status.setter
+    def kev_status(self, value):
+        self._kev_status = value
+        entry = self._kev_source()
+        if entry:
+            exposia_events.emit('source', source='kev', **entry)
+
+    def sources_summary(self):
+        """Bloc « sources » de run_summary.json, KEV compris."""
+        out = dict(self.sources)
+        kev = self._kev_source()
+        if kev:
+            out["kev"] = kev
+        return out
+
     def _ct_get_json(self, url, source):
         """
         GET JSON avec gestion manuelle du 429 (sans les réessais rapides de la session,
         qui prolongent le blocage). Retourne (data, rate_limited).
         """
         headers = {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
+        key = {'crt.sh': 'crtsh', 'Cert Spotter': 'certspotter'}.get(source, source)
         for attempt in range(self.CRTSH_MAX_ATTEMPTS):
             try:
                 response = requests.get(url, timeout=60, headers=headers)
             except requests.RequestException as e:
                 self.ui.status(f"{source} unreachable: {e}", "warning")
+                exposia_events.emit('source', source=key, status='error', message=str(e)[:200])
                 return None, False
             if response.status_code == 429 or response.status_code >= 500:
                 if attempt == self.CRTSH_MAX_ATTEMPTS - 1:
+                    exposia_events.emit('source', source=key, status='error', http_status=response.status_code,
+                                        attempt=attempt + 1, max_attempts=self.CRTSH_MAX_ATTEMPTS)
                     return None, response.status_code == 429
                 retry_after = response.headers.get('Retry-After', '')
                 wait = int(retry_after) if retry_after.isdigit() else self.CRTSH_WAITS[min(attempt, len(self.CRTSH_WAITS) - 1)]
                 wait = min(wait, 300)
                 self.ui.status(f"{source} returned HTTP {response.status_code} - waiting {wait}s before retry "
                                f"({attempt + 2}/{self.CRTSH_MAX_ATTEMPTS})", "warning")
+                exposia_events.emit('source', source=key, status='retry', http_status=response.status_code,
+                                    attempt=attempt + 2, max_attempts=self.CRTSH_MAX_ATTEMPTS, wait_s=wait)
                 time.sleep(wait + random.uniform(0, 3))
                 continue
             try:
@@ -431,6 +564,7 @@ class SubdomainScanner:
                 return response.json(), False
             except (requests.RequestException, ValueError) as e:
                 self.ui.status(f"{source} query failed: {e}", "warning")
+                exposia_events.emit('source', source=key, status='error', message=str(e)[:200])
                 return None, False
         return None, False
 
@@ -453,12 +587,14 @@ class SubdomainScanner:
             f"https://crt.sh/?q={self.domain}&output=json"
         ]
         found = set()
+        answered, started = 0, self._utc()
         for i, query in enumerate(queries):
             if i > 0:
                 # crt.sh limite le débit par IP : deux requêtes rapprochées => 429
                 time.sleep(random.uniform(5, 10))
             self.ui.status("Querying certificate database (crt.sh)...", "info")
             entries, rate_limited = self._ct_get_json(query, "crt.sh")
+            answered += entries is not None
             if entries is None:
                 if rate_limited:
                     # Inutile d'insister : chaque requête prolonge le blocage
@@ -470,13 +606,17 @@ class SubdomainScanner:
             )
             found.update(subs)
             self.ui.status(f"Found {len(subs)} subdomains via crt.sh (after filtering)", "success")
+        self._set_source("crtsh", "ok" if answered == len(queries) else "partial" if answered else "unavailable",
+                         started, errors=len(queries) - answered, from_cache=False)
         return found
 
     def _query_certspotter(self):
         self.ui.status("Querying fallback CT source (Cert Spotter)...", "info")
         url = (f"https://api.certspotter.com/v1/issuances?domain={self.domain}"
                f"&include_subdomains=true&expand=dns_names")
+        started = self._utc()
         entries, _ = self._ct_get_json(url, "Cert Spotter")
+        self._set_source("certspotter", "unavailable" if entries is None else "ok", started)
         if not entries:
             return set()
         subs = self._clean_names(name for entry in entries for name in entry.get("dns_names", []))
@@ -493,6 +633,7 @@ class SubdomainScanner:
                 with open(cache_file, encoding="utf-8") as f:
                     cached = json.load(f)
                 if cached:
+                    self._set_source("crtsh", "ok", self._utc(os.path.getmtime(cache_file)), from_cache=True)
                     age_h = (time.time() - os.path.getmtime(cache_file)) / 3600
                     self.ui.status(f"Using cached CT results ({len(cached)} subdomains, {age_h:.1f}h old) - "
                                    f"delete {cache_file} to force a fresh query", "info")
@@ -517,6 +658,7 @@ class SubdomainScanner:
 
     def resolve_ips(self, subdomains):
         self.ui.status("Resolving IP addresses...", "info")
+        self._set_source("dns", "ok")  # résolveur système ; un nom sans réponse n'est pas une erreur
         results = []
         all_ips = set()
         filtered_subdomains = [sub for sub in subdomains if not sub.startswith('*.')]
@@ -582,6 +724,8 @@ class SubdomainScanner:
 
     def shodan_query(self, api_key, all_ips):
         self.ui.status("Starting vulnerability scan...", "info")
+        started = self._utc()
+        self._set_source("shodan", "unavailable", started, publish=False)  # remplacé si le scan aboutit
         try:
             masked_key = "****"  # aucun fragment de la clé dans la console / les journaux
             self.ui.status(f"Using Shodan API Key: {masked_key}", "info")
@@ -591,6 +735,7 @@ class SubdomainScanner:
                 ModernUI.status("Shodan API key is valid", "success")
             except shodan.APIError as e:
                 ModernUI.status(f"Invalid Shodan API key: {e}", "error")
+                self._set_source("shodan", "unavailable", started)
                 return 0, 0, 0
             csv_filename = "resultats_shodan.csv"
             cve_filename = "cve_identifies.csv"
@@ -685,9 +830,11 @@ class SubdomainScanner:
                     writer = csv.writer(cve_file, delimiter=';')
                     writer.writerow(["CVE ID"])
                 self.ui.status(f"No vulnerabilities found - created empty {cve_filename}", "info")
+            self._set_enrichment_source("shodan", started, failed_ips, max(len(ip_list), 1))
             return vulnerabilities_found, len(cve_set), scanned_ips
         except Exception as e:
             self.ui.status(f"Unexpected error: {str(e)}", "error")
+            self._set_source("shodan", "unavailable", started)
             return 0, 0, 0
 
     def analyze_cves_from_file(self, cve_file="cve_identifies.csv"):
@@ -713,6 +860,7 @@ class SubdomainScanner:
                                f"{len(unique_cves)} CVEs). Add api_keys.nvd to speed this up.", "warning")
 
             self.ui.status(f"Analyzing {len(unique_cves)} unique CVEs with narrative mapping...", "info")
+            nvd_started = self._utc()
 
             cve_narratives = {}
             progress_bar = self.ui.tqdm_progress(
@@ -786,9 +934,15 @@ class SubdomainScanner:
 
             progress_bar.close()
             missing = sum(1 for n in cve_narratives.values() if n.get('CVSS_Version') in (None, '#N/A'))
+            self._set_enrichment_source("nvd", nvd_started, missing, max(len(cve_narratives), 1), api_version="2.0")
             if missing:
                 self.ui.status(f"{missing} CVE(s) without NVD data (not found or refused)", "warning")
             self.ui.status(f"CVE narrative analysis completed for {len(cve_narratives)} CVEs", "success")
+            if exposia_events.enabled():
+                exposia_events.emit('snapshot', phase='cve_analysis', domain=self.domain, items=[
+                    {'cve': cve, 'cvss': _snap_num(n.get('CVSS_Score')),
+                     'vector': None if str(n.get('CVSS_Vector', '#N/A')) in ('#N/A', 'nan', '') else str(n['CVSS_Vector'])}
+                    for cve, n in sorted(cve_narratives.items())])
             return cve_narratives
 
         except Exception as e:
@@ -831,8 +985,8 @@ class SubdomainScanner:
             year = int(float(str(cve_year).replace('.0', '')))
             current_year = datetime.now().year
             age = current_year - year
-            temporal_factor = math.exp(-age / 8.0)
-            return max(temporal_factor, 0.05)
+            temporal_factor = math.exp(-age / scoring.TEMPORAL_DECAY_YEARS)
+            return max(temporal_factor, scoring.TEMPORAL_FLOOR)
         except (ValueError, TypeError):
             return 0.0
 
@@ -1077,13 +1231,7 @@ class SubdomainScanner:
 
     def get_service_multiplier(self, criticality):
         """Multiplicateurs contextuels par criticité service"""
-        multipliers = {
-            'CRITIQUE': 1.3,
-            'HAUTE': 1.1,
-            'MOYENNE': 1.0,
-            'FAIBLE': 0.8
-        }
-        return multipliers.get(criticality, 1.0)
+        return scoring.SERVICE_MULTIPLIERS.get(criticality, 1.0)
 
     def get_internal_external_multiplier(self, row):
         """
@@ -1139,10 +1287,11 @@ class SubdomainScanner:
         epss_norm = self.normalize_epss(row.get('EPSS Score'))
         temporal_factor = self.calculate_temporal_factor(row.get('CVE - Year'))
 
+        w = scoring.QUALIF_WEIGHTS
         base_score = (
-            0.60 * epss_norm +
-            0.25 * cvss_norm +
-            0.15 * temporal_factor
+            w['epss'] * epss_norm +
+            w['cvss'] * cvss_norm +
+            w['age'] * temporal_factor
         )
 
         # Ordre d'application : contexte métier puis contexte infrastructure
@@ -1157,14 +1306,7 @@ class SubdomainScanner:
         # Plafonnement à 1.0
         final_score = min(final_score, 1.0)
 
-        if final_score >= 0.75:
-            return 'Critical'
-        elif final_score >= 0.55:
-            return 'High'
-        elif final_score >= 0.35:
-            return 'Medium'
-        else:
-            return 'Low'
+        return scoring.qualification_from_score(final_score)
 
     def qualify_cve_standard(self, row):
         """
@@ -1174,38 +1316,25 @@ class SubdomainScanner:
         epss_norm = self.normalize_epss(row.get('EPSS Score'))
         temporal_factor = self.calculate_temporal_factor(row.get('CVE - Year'))
 
+        w = scoring.QUALIF_WEIGHTS
         base_score = (
-            0.60 * epss_norm +
-            0.25 * cvss_norm +
-            0.15 * temporal_factor
+            w['epss'] * epss_norm +
+            w['cvss'] * cvss_norm +
+            w['age'] * temporal_factor
         )
 
         # Pas de multiplicateur service, seulement interne/externe
         ie_multiplier = self.get_internal_external_multiplier(row)
         final_score = min(base_score * ie_multiplier, 1.0)
 
-        if final_score >= 0.75:
-            return 'Critical'
-        elif final_score >= 0.55:
-            return 'High'
-        elif final_score >= 0.35:
-            return 'Medium'
-        else:
-            return 'Low'
+        return scoring.qualification_from_score(final_score)
 
     def map_service_to_qualification(self, criticality, row):
         """
         Mapping conservateur service seul -> qualification + multiplicateur interne/externe
         Modification : ajouter le paramètre row pour accéder aux données interne/externe
         """
-        base_mapping = {
-            'CRITIQUE': 'Medium',
-            'HAUTE': 'Medium',
-            'MOYENNE': 'Low',
-            'FAIBLE': 'Low'
-        }
-
-        base_qualification = base_mapping.get(criticality, 'Low')
+        base_qualification = scoring.SERVICE_ONLY_QUALIF.get(criticality, 'Low')
 
         # Conversion qualification vers score pour appliquer le multiplicateur
         score_mapping = {'Critical': 0.8, 'High': 0.6, 'Medium': 0.4, 'Low': 0.2}
@@ -1216,14 +1345,7 @@ class SubdomainScanner:
         final_score = min(base_score * ie_multiplier, 1.0)
 
         # Reconversion vers qualification
-        if final_score >= 0.75:
-            return 'Critical'
-        elif final_score >= 0.55:
-            return 'High'
-        elif final_score >= 0.35:
-            return 'Medium'
-        else:
-            return 'Low'
+        return scoring.qualification_from_score(final_score)
 
     def apply_exploit_floor(self, qualification, row):
         """
@@ -1253,6 +1375,44 @@ class SubdomainScanner:
             return floor
         return qualification
 
+    def apply_epss_floor(self, qualification, row):
+        """
+        Plancher « EPSS » : une CVE absente du KEV dont l'EPSS dépasse le seuil de
+        exposia_scoring.EPSS_FLOOR est au moins High. Une CVE du KEV relève du
+        plancher KEV (apply_kev_floors), appliqué ensuite au niveau du rapport.
+        """
+        if str(row.get('KEV', '')).strip() == 'Yes':
+            return qualification
+        floor = scoring.epss_floor(row.get('EPSS Score'))
+        return scoring.raise_to(qualification, floor) if floor else qualification
+
+    @staticmethod
+    def apply_kev_floors(rows):
+        """
+        Plancher « KEV » sur les lignes du rapport (exposia_scoring.kev_floor).
+        Appliqué une fois toutes les lignes construites : la règle du chaînage
+        regarde si le même hôte (IP) expose une CVE de vecteur réseau. Ne fait que
+        relever une qualification. Renvoie le nombre de lignes relevées.
+        """
+        def has_cve(r):
+            return str(r.get('Vulnerability (CVE)', '#N/A')) not in ('#N/A', 'None', 'No data', '', 'nan')
+
+        network_hosts = {
+            str(r.get('IP Address'))
+            for r in rows
+            if has_cve(r) and scoring.parse_cvss_vector(r.get('CVSS_Vector'))[0] == 'N'
+        }
+        raised = 0
+        for r in rows:
+            if not has_cve(r) or str(r.get('KEV', '')).strip() != 'Yes':
+                continue
+            floor = scoring.kev_floor(r.get('CVSS_Vector'), r.get('Impact business / opérationnel'),
+                                      str(r.get('IP Address')) in network_hosts)
+            before = r.get('Exposia - Qualification')
+            r['Exposia - Qualification'] = scoring.raise_to(before, floor)
+            raised += r['Exposia - Qualification'] != before
+        return raised
+
     def contextual_vulnerability_qualification(self, row):
         """
         Implémentation CORRECTE de la matrice de décision complète
@@ -1267,11 +1427,12 @@ class SubdomainScanner:
         has_valid_service = service_info is not None
 
         if has_valid_service and has_cve:
-            return self.apply_exploit_floor(self.qualify_with_service_context(row, service_info), row)
+            return self.apply_epss_floor(
+                self.apply_exploit_floor(self.qualify_with_service_context(row, service_info), row), row)
         elif has_valid_service and not has_cve:
             return self.map_service_to_qualification(service_info['criticality'], row)
         elif not has_valid_service and has_cve:
-            return self.apply_exploit_floor(self.qualify_cve_standard(row), row)
+            return self.apply_epss_floor(self.apply_exploit_floor(self.qualify_cve_standard(row), row), row)
         else:
             # Cas sans service ni CVE - appliquer quand même le multiplicateur interne/externe
             base_score = 0.1  # Score très bas par défaut
@@ -1325,11 +1486,105 @@ class SubdomainScanner:
                     if code:
                         index.setdefault(code, []).append(exploit_id)
             self.ui.status(f"Indexed ExploitDB ({len(index)} CVEs referenced)", "success")
+            self._set_source("exploitdb", "ok", entries=len(index))
         except (requests.RequestException, IndexError, StopIteration) as e:
             self.ui.status(f"ExploitDB unavailable ({e}) - ExploitDB exploit links will be skipped", "warning")
+            self._set_source("exploitdb", "unavailable")
 
         self._exploitdb_index = index
         return index
+
+    def _parse_kev(self, catalog):
+        """Catalogue KEV (JSON de la CISA) -> index validé. Données externes : formats stricts."""
+        index = {}
+        for item in (catalog or {}).get("vulnerabilities", []) or []:
+            if not isinstance(item, dict):
+                continue
+            cve_id = str(item.get("cveID", "")).strip().upper()
+            if not self._CVE_ID_RE.match(cve_id):
+                continue
+            added = str(item.get("dateAdded", "")).strip()
+            ransomware = str(item.get("knownRansomwareCampaignUse", "")).strip().capitalize()
+            index[cve_id] = (added if self._DATE_RE.match(added) else "#N/A",
+                             ransomware if ransomware in ("Known", "Unknown") else "Unknown")
+        return index
+
+    def _get_kev_index(self):
+        """
+        Index KEV, chargé UNE fois par run : cache local récent (24 h), sinon
+        téléchargement (flux CISA, puis miroir GitHub de la CISA), sinon cache
+        périmé avec avertissement. Sans aucune source, {} : le statut KEV des CVE
+        est alors inconnu (#N/A), jamais « non listé ».
+        """
+        if self._kev_index is not None:
+            return self._kev_index
+
+        def _meta(catalog, from_cache):
+            when = os.path.getmtime(cache) if from_cache and os.path.exists(cache) else time.time()
+            return {"status": "ok", "from_cache": from_cache,
+                    "retrieved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(when)),
+                    "catalog_version": str(catalog.get("catalogVersion", "")) or None,
+                    "date_released": str(catalog.get("dateReleased", "")) or None,
+                    "entries": len(self._kev_index)}
+
+        cache = self.KEV_CACHE_FILE
+        cached = None
+        try:
+            if os.path.exists(cache):
+                with open(cache, encoding="utf-8") as f:
+                    cached = json.load(f)
+                if time.time() - os.path.getmtime(cache) < self.KEV_CACHE_TTL:
+                    self._kev_index = self._parse_kev(cached)
+                    if self._kev_index:
+                        self.kev_status = _meta(cached, True)
+                        self.ui.status(f"Using cached KEV catalog ({len(self._kev_index)} CVEs, "
+                                       f"version {cached.get('catalogVersion', '?')})", "info")
+                        return self._kev_index
+        except (OSError, ValueError, AttributeError):
+            cached = None
+
+        for url in self.KEV_URLS:
+            try:
+                response = self.session.get(url, timeout=60)
+                response.raise_for_status()
+                catalog = response.json()
+                self._kev_index = self._parse_kev(catalog)
+                if not self._kev_index:
+                    continue
+                try:
+                    with open(cache, "w", encoding="utf-8") as f:
+                        json.dump(catalog, f)
+                except OSError:
+                    pass
+                self.kev_status = _meta(catalog, False)
+                self.ui.status(f"Loaded CISA KEV catalog ({len(self._kev_index)} CVEs, "
+                               f"version {catalog.get('catalogVersion', '?')})", "success")
+                return self._kev_index
+            except (requests.RequestException, ValueError, AttributeError) as e:
+                self.ui.status(f"KEV catalog unavailable from {url.split('/')[2]} ({e})", "warning")
+
+        if cached:
+            self._kev_index = self._parse_kev(cached)
+            if self._kev_index:
+                self.kev_status = _meta(cached, True)
+                self.ui.status(f"Using stale KEV cache (version {cached.get('catalogVersion', '?')}) - "
+                               f"KEV status may be out of date", "warning")
+                return self._kev_index
+
+        self._kev_index = {}
+        self.kev_status = {"status": "unavailable"}
+        self.ui.status("KEV catalog unavailable - KEV status left unknown (#N/A), no KEV floor applied", "warning")
+        return self._kev_index
+
+    def kev_columns(self, cve_id):
+        """Colonnes KEV d'une CVE : KEV (Yes / No / #N/A si catalogue indisponible), date d'ajout, rançongiciel."""
+        index = self._get_kev_index()
+        if not index:
+            return {"KEV": "#N/A", "KEV Date Added": "#N/A", "KEV Ransomware": "#N/A"}
+        entry = index.get(str(cve_id).strip().upper())
+        if entry is None:
+            return {"KEV": "No", "KEV Date Added": "#N/A", "KEV Ransomware": "#N/A"}
+        return {"KEV": "Yes", "KEV Date Added": entry[0], "KEV Ransomware": entry[1]}
 
     def get_cve_details(self, cve_id):
         """
@@ -1342,6 +1597,8 @@ class SubdomainScanner:
           • ExploitDB indisponible    -> aucun lien ExploitDB.
         Les échecs sont comptés dans self.enrichment_failures pour le bilan final.
         """
+        if self._enrichment_started is None:
+            self._enrichment_started = self._utc()
         epss_data, epss_error = self.fetch_epss_score(cve_id)
         github_data, github_error = self.fetch_github_exploits(cve_id)
 
@@ -1352,6 +1609,8 @@ class SubdomainScanner:
             try:
                 if epss_data and epss_data.get("data"):
                     epss_score = epss_data["data"][0]["epss"]
+                    if self._epss_date is None and re.match(r'^\d{4}-\d{2}-\d{2}$', str(epss_data["data"][0].get("date", ""))):
+                        self._epss_date = epss_data["data"][0]["date"]
             except (AttributeError, KeyError, IndexError, TypeError):
                 self.enrichment_failures["EPSS"] += 1
 
@@ -1384,11 +1643,17 @@ class SubdomainScanner:
             "CVE ID": cve_id,
             "EPSS Score": str(epss_score),
             "Number of Exploits": exploits_count,
-            "Exploits": combined_exploits_str
+            "Exploits": combined_exploits_str,
+            **self.kev_columns(cve_id),
         }, exploits_count
 
     def report_enrichment_failures(self, total_cves):
         """Bilan des sources d'enrichissement indisponibles (une ligne par source)."""
+        total = max(total_cves, 1)
+        self._set_enrichment_source("epss", self._enrichment_started, self.enrichment_failures["EPSS"], total,
+                                    score_date=self._epss_date)
+        self._set_enrichment_source("poc_in_github", self._enrichment_started,
+                                    self.enrichment_failures["PoC-in-GitHub"], total)
         if self.enrichment_failures["EPSS"]:
             self.ui.status(f"EPSS unavailable for {self.enrichment_failures['EPSS']}/{total_cves} CVE(s) - "
                            f"EPSS set to #N/A, exploits kept", "warning")
@@ -1470,12 +1735,18 @@ class SubdomainScanner:
                     cve_data = pd.read_csv("cve_details.csv", sep=";")
                     cve_data["EPSS Score"] = cve_data["EPSS Score"].astype(str).replace('nan', '#N/A')
                     cve_dict = {}
+
+                    def _kev_value(row, col):
+                        value = str(row.get(col, '#N/A'))
+                        return '#N/A' if value in ('', 'nan', 'NaN', 'None') else value
                     for _, cve_row in cve_data.iterrows():
                         cve_id = cve_row['CVE ID']
                         cve_dict[cve_id] = {
                             'EPSS Score': str(cve_row['EPSS Score']),
                             'Number of Exploits': int(cve_row['Number of Exploits']),
-                            'Exploits': str(cve_row['Exploits'])
+                            'Exploits': str(cve_row['Exploits']),
+                            **{col: _kev_value(cve_row, col)
+                               for col in ('KEV', 'KEV Date Added', 'KEV Ransomware')},
                         }
                 else:
                     cve_dict = {}
@@ -1529,12 +1800,15 @@ class SubdomainScanner:
                                     'Number of Exploits': 0,
                                 }
 
+                                kev = {"KEV": "#N/A", "KEV Date Added": "#N/A", "KEV Ransomware": "#N/A"}
                                 if has_cve and cve in cve_dict:
                                     row_data['EPSS Score'] = cve_dict[cve]['EPSS Score']
                                     row_data['Number of Exploits'] = cve_dict[cve]['Number of Exploits']
                                     exploits = cve_dict[cve]['Exploits']
+                                    kev = {col: cve_dict[cve][col] for col in kev}
                                 else:
                                     exploits = "#N/A"
+                                row_data['KEV'] = kev['KEV']
 
                                 qualification = self.contextual_vulnerability_qualification(row_data)
                                 service = service_info['service'] if has_valid_service else '#N/A'
@@ -1560,6 +1834,7 @@ class SubdomainScanner:
                                     "Impact business / opérationnel": criticite,
                                     "Exposia - Qualification": qualification,
                                     "Exploits": exploits,
+                                    **kev,
                                     "CVSS_Version": cve_narrative.get('CVSS_Version', '#N/A'),
                                     "CVSS_Vector": cve_narrative.get('CVSS_Vector', '#N/A'),
                                 })
@@ -1588,6 +1863,7 @@ class SubdomainScanner:
                                 "Impact business / opérationnel": "#N/A",
                                 "Exposia - Qualification": qualification,
                                 "Exploits": "#N/A",
+                                "KEV": "#N/A", "KEV Date Added": "#N/A", "KEV Ransomware": "#N/A",
                                 "CVSS_Version": "#N/A",
                                 "CVSS_Vector": "#N/A",
                             })
@@ -1616,9 +1892,15 @@ class SubdomainScanner:
                         "Impact business / opérationnel": "#N/A",
                         "Exposia - Qualification": qualification,
                         "Exploits": "#N/A",
+                        "KEV": "#N/A", "KEV Date Added": "#N/A", "KEV Ransomware": "#N/A",
                         "CVSS_Version": "#N/A",
                         "CVSS_Vector": "#N/A",
                     })
+
+            # Plancher KEV : après coup, il dépend des autres CVE de l'hôte (chaînage).
+            kev_raised = self.apply_kev_floors(all_rows)
+            if kev_raised:
+                self.ui.status(f"KEV floor raised {kev_raised} exposure(s)", "info")
 
             # Création du rapport initial
             final_report = pd.DataFrame(all_rows)
@@ -1662,6 +1944,11 @@ class SubdomainScanner:
             try:
                 final_report.to_csv(output_filename, index=False, sep=";")
                 self.ui.status(f"Created comprehensive report with unified attack structure: {output_filename}", "success")
+                if exposia_events.enabled():
+                    exposia_events.emit('consolidated', domain=self.domain, counts=consolidated_counts(final_report),
+                                        cdn={'subdomains': self.cdn_stats['subdomains'],
+                                             'edge_ips': len(self.cdn_stats['ips']),
+                                             'rows_set_aside': self.cdn_stats['rows_dropped']})
 
                 # Display classification statistics
                 total = len(final_report)
@@ -1961,6 +2248,8 @@ def main():
     global_qualitative_rating = "Low"  # Valeur par défaut
     total_cdn_subdomains = 0
     total_cdn_ips = set()
+    kev_status = {"status": "skipped"}   # catalogue KEV : non interrogé sans CVE
+    scanners = {}                        # domaine -> scanner (bloc « sources » de run_summary.json)
 
     # Répertoire de travail d'origine (restauré après chaque domaine)
     _initial_cwd = os.getcwd()
@@ -1974,6 +2263,7 @@ def main():
         ModernUI.status(f"Output directory: {domain_data_dir}", "info")
 
         scanner = SubdomainScanner(domain, nvd_api_key=nvd_key)
+        scanners[domain] = scanner
         start_time = time.time()
 
         try:
@@ -1984,10 +2274,22 @@ def main():
                 continue
 
             ModernUI.status(f"Found {len(subdomains)} unique subdomains for {domain}", "success")
+            exposia_events.count('subdomains', len(subdomains), domain=domain)
+            if exposia_events.enabled():
+                exposia_events.emit('snapshot', phase='subdomains', domain=domain,
+                                    items=[{'host': h} for h in sorted(subdomains)])
 
             # Étape 2 : Résolution des IPs
             ip_data, all_ips = scanner.resolve_ips(subdomains)
             ModernUI.status(f"Resolved {len(all_ips)} unique IP addresses", "success")
+            exposia_events.count('ips', len(all_ips), domain=domain)
+            if exposia_events.enabled():
+                _ips = {}
+                for _host, _ip in ip_data:
+                    if _ip and str(_ip) not in ('No IP found', '#N/A'):
+                        _ips.setdefault(_host, []).append(_ip)
+                exposia_events.emit('snapshot', phase='resolving_ips', domain=domain,
+                                    items=[{'host': h, 'ips': sorted(set(_ips.get(h, [])))} for h in sorted(subdomains)])
 
             # Étape 3 : Export des résultats intermédiaires
             scanner.export_results(subdomains, ip_data, all_ips)
@@ -2009,6 +2311,22 @@ def main():
 
                 # Scan des vulnérabilités avec Shodan
                 vulnerabilities_found, unique_vulnerabilities, scanned_ips = scanner.shodan_query(api_key, all_ips)
+                if exposia_events.enabled():
+                    try:
+                        _services = {}
+                        with open("resultats_shodan.csv", encoding="utf-8", newline="") as _f:
+                            for r in csv.DictReader(_f, delimiter=";"):
+                                if r.get("Port") in (None, "", "#N/A"):
+                                    continue
+                                _cves = _services.setdefault((r.get("IP Address"), int(float(r["Port"]))), set())
+                                if re.match(r"^CVE-\d{4}-\d+$", str(r.get("Vulnerability (CVE)", ""))):
+                                    _cves.add(r["Vulnerability (CVE)"])
+                        exposia_events.count('services', len(_services), domain=domain)
+                        exposia_events.emit('snapshot', phase='scanning_ips', domain=domain, items=[
+                            {'ip': ip, 'port': port, 'cves': sorted(c)} for (ip, port), c in sorted(_services.items())])
+                    except OSError:
+                        pass
+                    exposia_events.count('cves', unique_vulnerabilities, domain=domain)
 
                 if unique_vulnerabilities > 0:
                     ModernUI.status("Finding known public exploits...", "info")
@@ -2039,6 +2357,13 @@ def main():
                         total_exploits_domain += exploits_count
 
                     progress_bar.close()
+                    exposia_events.count('exploits', total_exploits_domain, domain=domain)
+                    if exposia_events.enabled():
+                        exposia_events.emit('snapshot', phase='checking_exploits', domain=domain, items=[
+                            {'cve': d.get('CVE ID'), 'exploits': int(d.get('Number of Exploits') or 0),
+                             'epss': _snap_num(d.get('EPSS Score')),
+                             'kev': {'Yes': True, 'No': False}.get(str(d.get('KEV', '')))}
+                            for d in sorted(all_results, key=lambda x: str(x.get('CVE ID')))])
                     scanner.report_enrichment_failures(len(cve_ids))
                     scanner.export_cve_to_csv(all_results)
                 else:
@@ -2047,6 +2372,8 @@ def main():
             # Étape 5 : Génération du rapport centralisé avec calcul de criticité AVANT enrichissement
             success, avg_criticality_score, avg_qualitative_rating = scanner.generate_centralized_report()
             total_cdn_subdomains += scanner.cdn_stats["subdomains"]
+            if scanner.kev_status.get("status") != "skipped":
+                kev_status = scanner.kev_status
             total_cdn_ips |= scanner.cdn_stats["ips"]
 
             if success:
@@ -2114,13 +2441,17 @@ def main():
         "criticality_rating": global_qualitative_rating,
         "cdn_subdomains": total_cdn_subdomains,
         "cdn_edge_ips": len(total_cdn_ips),
+        "kev": kev_status,
     }
     import json
     for _domain in domains:
         try:
             _path = os.path.join(exposia_paths.data_dir(_domain), "run_summary.json")
+            _metrics = dict(run_metrics)
+            if _domain in scanners:
+                _metrics["sources"] = scanners[_domain].sources_summary()
             with open(_path, "w", encoding="utf-8") as _f:
-                json.dump(run_metrics, _f, ensure_ascii=False)
+                json.dump(_metrics, _f, ensure_ascii=False)
         except Exception as _e:
             ModernUI.status(f"Écriture run_summary.json impossible : {_e}", "warning")
 
