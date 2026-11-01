@@ -16,11 +16,13 @@ Exposia sert à la sensibilisation à la sécurité et à l'aide à la décision
 
 Pour chaque domaine, un dossier `Result/<nom>/` (`<nom>` est le domaine enregistré sans son suffixe, par exemple `example` pour `example.com`) contenant :
 
-- `Rapport_Final_*.pdf` : couverture, synthèse, profils de menace, actifs, risques, plan de remédiation ;
+- `Rapport_Final_*.pdf` (`Final_Report_*.pdf` en anglais) : couverture, synthèse, profils de menace, actifs, risques, plan de remédiation ;
 - `Exposia_*_presentation.csv` : une ligne par exposition × CVE, prête pour un tableur ;
+- `Exposia_*_results.json` : les résultats canoniques pour d'autres outils : chiffres de synthèse, « En clair » du rapport, données des visuels et catalogues des hôtes, expositions, scénarios, mesures et acteurs, avec des codes stables plutôt que des libellés ([schéma](schema/results.schema.json)) ;
+- `Exposia_*_digest.md` : la même analyse condensée pour un assistant IA (Markdown, environ trois fois plus compact que le CSV) ;
 - `data/` : fichiers CSV et PDF intermédiaires, conservés pour examen.
 
-Le rapport et le CSV sont générés **en français**. Le pipeline est décrit dans [Methodologie.md](Methodology/Methodologie.fr.md).
+Les livrables (rapport, CSV, JSON, digest) sont générés en français par défaut, en anglais avec `--lang en` ; les messages de la console restent en français. Le pipeline est décrit dans [Methodologie.md](Methodology/Methodologie.fr.md).
 
 ### Exemple de rendu
 
@@ -70,11 +72,14 @@ Renseignez `api_keys.shodan` et `api_keys.nvd`, ou utilisez les variables d'envi
 
 | Option | Effet |
 |---|---|
-| `--skip-threat` | Ignore la modélisation des menaces (la seule étape interactive) |
+| `--lang fr\|en` | Langue des livrables (défaut : `fr`). Une campagne existante se rend dans l'autre langue sans nouvelle collecte : `--skip-discovery --skip-mitigation --skip-threat --lang en` |
+| `--secteur`, `--taille`, `--zone` | Profil de l'organisation pour la modélisation des menaces, pour un run sans aucune saisie (valeurs : `./run_pipeline.sh --help`, libellés anglais acceptés aussi : `Healthcare`, `SME`, `Western_Europe`) ; une valeur omise est demandée au clavier |
+| `--skip-threat` | Ignore la modélisation des menaces |
 | `--skip-discovery --skip-mitigation` | Régénère le rapport à partir des données existantes |
 | `--resolve-ips` | Résout les IP sans analyse de vulnérabilités |
 | `--clean` | Supprime les PDF intermédiaires |
 | `--continue-on-error` | Continue si une étape échoue |
+| `--events` | Écrit les événements de progression (JSON Lines) dans `Result/<nom>/data/events.jsonl`, pour un outil qui pilote Exposia : étapes, avancement des boucles, compteurs bruts et consolidés, instantanés par phase, état des sources ; format dans `Modules/exposia_events.py` |
 
 `./run_pipeline.sh --help` liste toutes les options.
 
@@ -83,7 +88,7 @@ Renseignez `api_keys.shodan` et `api_keys.nvd`, ou utilisez les variables d'envi
 1. **D1** : découvre les sous-domaines et les IP, puis les services et les CVE ; calcule les scores par exposition et pour le domaine.
 2. **D2** : associe chaque constat à des mesures de remédiation et les classe.
 3. **D3** : modélise les profils de menace pertinents à partir d'éléments de contexte et de matrices.
-4. **Modules R** : génèrent et assemblent le rapport PDF et l'export CSV.
+4. **Modules R** : génèrent et assemblent le rapport PDF, l'export CSV et le JSON canonique, calculé par les mêmes fonctions que le rapport.
 
 Les modules échangent des fichiers CSV et JSON : chaque étape peut être examinée et relancée seule. **Seul D1 accède à des services externes** ; les étapes suivantes travaillent sur les données collectées, et un test le vérifie.
 
@@ -110,9 +115,9 @@ Exposia interroge ces services à l'exécution, avec vos propres clés. Aucune d
 - **Visibilité incomplète** : les sources passives peuvent être incomplètes ou obsolètes. La prise en compte des CDN dépend des plages IP et des ASN configurés : certains actifs peuvent être sous-représentés, tandis que des fournisseurs non répertoriés peuvent entraîner des surestimations.
 - **Heuristiques** : la classification interne/externe et les profils de menace reposent sur des règles configurables et un jugement d'expert.
 - **Score non validé** : pondérations et seuils restent ouverts à un calibrage empirique.
-- **Pas encore de signal KEV** : le catalogue CISA Known Exploited Vulnerabilities n'entre pas dans la qualification.
+- **KEV accélère, sans disculper** : une CVE du catalogue CISA des vulnérabilités activement exploitées passe en Critical (High pour une élévation de privilèges locale isolée), mais une CVE absente du catalogue n'est pas réputée non exploitée.
 - **Ne remplace pas une évaluation professionnelle** : Exposia ne peut pas démontrer qu'un système est sûr.
 
 ## Contribuer
 
-Les issues et pull requests sont les bienvenues, en particulier pour de nouveaux services ou chemins d'attaque dans `Parameters/`.
+Les issues et pull requests sont les bienvenues, en particulier pour de nouveaux services ou chemins d'attaque dans `Parameters/`. Une nouvelle catégorie de service ou de mesure a aussi besoin de son code dans `Parameters/service_categories.csv` ou `Parameters/mitigation_categories.csv`.
